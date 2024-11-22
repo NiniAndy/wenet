@@ -74,6 +74,7 @@ class ASRModel(torch.nn.Module):
             normalize_length=length_normalized_loss,
         )
 
+
     @torch.jit.unused
     def forward(
         self,
@@ -89,16 +90,14 @@ class ASRModel(torch.nn.Module):
         assert text_lengths.dim() == 1, text_lengths.shape
         # Check that batch_size is unified
         assert (speech.shape[0] == speech_lengths.shape[0] == text.shape[0] ==
-                text_lengths.shape[0]), (speech.shape, speech_lengths.shape,
-                                         text.shape, text_lengths.shape)
+                text_lengths.shape[0]), (speech.shape, speech_lengths.shape, text.shape, text_lengths.shape)
         # 1. Encoder
         encoder_out, encoder_mask = self.encoder(speech, speech_lengths)
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
 
         # 2a. CTC branch
         if self.ctc_weight != 0.0:
-            loss_ctc, ctc_probs = self.ctc(encoder_out, encoder_out_lens, text,
-                                           text_lengths)
+            loss_ctc, ctc_probs = self.ctc(encoder_out, encoder_out_lens, text, text_lengths)
         else:
             loss_ctc, ctc_probs = None, None
 
@@ -124,8 +123,7 @@ class ASRModel(torch.nn.Module):
         elif loss_att is None:
             loss = loss_ctc
         else:
-            loss = self.ctc_weight * loss_ctc + (1 -
-                                                 self.ctc_weight) * loss_att
+            loss = self.ctc_weight * loss_ctc + (1 - self.ctc_weight) * loss_att
         return {
             "loss": loss,
             "loss_att": loss_att,

@@ -120,18 +120,25 @@ class Paraformer(ASRModel):
                  length_normalized_loss: bool = False,
                  sampler: bool = True,
                  sampling_ratio: float = 0.75,
-                 add_eos: bool = True,
+                 add_eos: bool = False,
                  special_tokens: Optional[Dict] = None,
                  apply_non_blank_embedding: bool = False):
-        assert isinstance(encoder,
-                          SanmEncoder), isinstance(decoder, SanmDecoder)
-        super().__init__(vocab_size, encoder, decoder, ctc, ctc_weight,
-                         IGNORE_ID, 0.0, lsm_weight, length_normalized_loss,
-                         None, apply_non_blank_embedding)
+        # assert isinstance(encoder, SanmEncoder), isinstance(decoder, SanmDecoder)
+        super().__init__(
+            vocab_size,
+            encoder,
+            decoder,
+            ctc,
+            ctc_weight,
+            IGNORE_ID,
+            0.0,
+            lsm_weight,
+            length_normalized_loss,
+            None,
+            apply_non_blank_embedding)
         if ctc_weight == 0.0:
             del ctc
         self.predictor = predictor
-        self.lfr = LFR()
 
         assert special_tokens is not None
         self.sos = special_tokens['<sos>']
@@ -139,8 +146,7 @@ class Paraformer(ASRModel):
 
         self.sampler = sampler
         self.sampling_ratio = sampling_ratio
-        if sampler:
-            self.embed = torch.nn.Embedding(vocab_size, encoder.output_size())
+
         # NOTE(Mddct): add eos in tail of labels for predictor
         # eg:
         #    gt:         你 好 we@@ net
@@ -161,46 +167,34 @@ class Paraformer(ASRModel):
         text_lengths = batch['target_lengths'].to(device)
 
         # 0 encoder
-        encoder_out, encoder_out_mask = self._forward_encoder(
-            speech, speech_lengths)
+        encoder_out, encoder_mask = self.encoder(speech, speech_lengths)
+        encoder_out_lens = encoder_mask.squeeze(1).sum(1)
 
         # 1 predictor
         ys_pad, ys_pad_lens = text, text_lengths
         if self.add_eos:
             _, ys_pad = add_sos_eos(text, self.sos, self.eos, self.ignore_id)
             ys_pad_lens = text_lengths + 1
-        acoustic_embd, token_num, _, _, _, tp_token_num, _ = self.predictor(
-            encoder_out, ys_pad, encoder_out_mask, self.ignore_id)
+        acoustic_embd, token_num, _, _, _, tp_token_num, _ = self.predictor(encoder_out, ys_pad, encoder_mask, self.ignore_id)
 
         # 2 decoder with sampler
         # TODO(Mddct): support mwer here
-        acoustic_embd = self._sampler(
-            encoder_out,
-            encoder_out_mask,
-            ys_pad,
-            ys_pad_lens,
-            acoustic_embd,
-        )
+        decoder_out_1st = None
+        if self.sampler:
+            acoustic_embd, decoder_out_1st = self._sampler(encoder_out, encoder_mask, ys_pad, ys_pad_lens, acoustic_embd)
+
         # 3 loss
         # 3.1 ctc branhch
         loss_ctc: Optional[torch.Tensor] = None
         if self.ctc_weight != 0.0:
-            loss_ctc, _ = self._forward_ctc(encoder_out, encoder_out_mask,
-                                            text, text_lengths)
+            loss_ctc, _ = self._forward_ctc(encoder_out, encoder_mask, text, text_lengths)
         # 3.2 quantity loss for cif
-        loss_quantity = torch.nn.functional.l1_loss(
-            token_num,
-            ys_pad_lens.to(token_num.dtype),
-            reduction='sum',
-        )
+        loss_quantity = torch.nn.functional.l1_loss(token_num, ys_pad_lens.to(token_num.dtype), reduction='sum',)
         loss_quantity = loss_quantity / ys_pad_lens.sum().to(token_num.dtype)
-        loss_quantity_tp = torch.nn.functional.l1_loss(
-            tp_token_num, ys_pad_lens.to(token_num.dtype),
-            reduction='sum') / ys_pad_lens.sum().to(token_num.dtype)
+        loss_quantity_tp = torch.nn.functional.l1_loss(tp_token_num, ys_pad_lens.to(token_num.dtype),reduction='sum') / ys_pad_lens.sum().to(token_num.dtype)
+        infos = {"acoustic_embd": acoustic_embd, "decoder_out_1st": decoder_out_1st}
+        loss_decoder, acc_att = self._calc_att_loss(encoder_out, encoder_mask, ys_pad, ys_pad_lens, infos)
 
-        loss_decoder, acc_att = self._calc_att_loss(encoder_out,
-                                                    encoder_out_mask, ys_pad,
-                                                    acoustic_embd, ys_pad_lens)
         loss = loss_decoder
         if loss_ctc is not None:
             loss = loss + self.ctc_weight * loss_ctc
@@ -214,63 +208,52 @@ class Paraformer(ASRModel):
             "th_accuracy": acc_att,
         }
 
+
     def _calc_att_loss(
         self,
         encoder_out: torch.Tensor,
         encoder_mask: torch.Tensor,
         ys_pad: torch.Tensor,
-        ys_pad_emb: torch.Tensor,
         ys_pad_lens: torch.Tensor,
         infos: Dict[str, List[str]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        decoder_out, _, _ = self.decoder(encoder_out, encoder_mask, ys_pad_emb,
-                                         ys_pad_lens)
+        ys_pad_emb = infos['acoustic_embd']
+        decoder_out_1st = infos['decoder_out_1st']
+        decoder_out, _ = self.decoder(encoder_out, encoder_mask, ys_pad_emb, ys_pad_lens)
+        if decoder_out_1st is None:
+            decoder_out_1st = decoder_out
         loss_att = self.criterion_att(decoder_out, ys_pad)
-        acc_att = th_accuracy(decoder_out.view(-1, self.vocab_size),
-                              ys_pad,
-                              ignore_label=self.ignore_id)
+        acc_att = th_accuracy(decoder_out_1st.view(-1, self.vocab_size), ys_pad, ignore_label=self.ignore_id)
         return loss_att, acc_att
 
+
     @torch.jit.unused
-    def _sampler(self, encoder_out, encoder_out_mask, ys_pad, ys_pad_lens,
-                 pre_acoustic_embeds):
+    def _sampler(self, encoder_out, encoder_out_mask, ys_pad, ys_pad_lens, pre_acoustic_embeds):
         device = encoder_out.device
         B, _ = ys_pad.size()
 
         tgt_mask = make_non_pad_mask(ys_pad_lens)
         # zero the ignore id
         ys_pad = ys_pad * tgt_mask
-        ys_pad_embed = self.embed(ys_pad)  # [B, T, L]
+        ys_pad_embed, _ = self.decoder.embed(ys_pad)
         with torch.no_grad():
-            decoder_out, _, _ = self.decoder(encoder_out, encoder_out_mask,
-                                             pre_acoustic_embeds, ys_pad_lens)
+            decoder_out, _ = self.decoder(encoder_out, encoder_out_mask, pre_acoustic_embeds, ys_pad_lens)
             pred_tokens = decoder_out.argmax(-1)
             nonpad_positions = tgt_mask
             same_num = ((pred_tokens == ys_pad) * nonpad_positions).sum(1)
-            input_mask = torch.ones_like(
-                nonpad_positions,
-                device=device,
-                dtype=tgt_mask.dtype,
-            )
+            input_mask = torch.ones_like(nonpad_positions, device=device, dtype=tgt_mask.dtype,)
             for li in range(B):
-                target_num = (ys_pad_lens[li] -
-                              same_num[li].sum()).float() * self.sampling_ratio
+                target_num = (ys_pad_lens[li] - same_num[li].sum()).float() * self.sampling_ratio
                 target_num = target_num.long()
                 if target_num > 0:
-                    input_mask[li].scatter_(
-                        dim=0,
-                        index=torch.randperm(ys_pad_lens[li],
-                                             device=device)[:target_num],
-                        value=0,
-                    )
+                    input_mask[li].scatter_(dim=0, index=torch.randperm(ys_pad_lens[li], device=device)[:target_num], value=0,)
             input_mask = torch.where(input_mask > 0, 1, 0)
             input_mask = input_mask * tgt_mask
             input_mask_expand = input_mask.unsqueeze(2)  # [B, T, 1]
 
-        sematic_embeds = torch.where(input_mask_expand == 1,
-                                     pre_acoustic_embeds, ys_pad_embed)
+        sematic_embeds = torch.where(input_mask_expand == 1, pre_acoustic_embeds, ys_pad_embed)
         # zero out the paddings
-        return sematic_embeds * tgt_mask.unsqueeze(2)
+        return sematic_embeds * tgt_mask.unsqueeze(2), decoder_out * tgt_mask.unsqueeze(2)
 
     def _forward_encoder(
         self,
@@ -296,8 +279,7 @@ class Paraformer(ASRModel):
         speech_lengths: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         res = self._forward_paraformer(speech, speech_lengths)
-        return res['decoder_out'], res['decoder_out_lens'], res[
-            'tp_alphas'], res['tp_mask'].sum(1).squeeze(-1)
+        return res['decoder_out'], res['decoder_out_lens'], res['tp_alphas'], res['tp_mask'].sum(1).squeeze(-1)
 
     @torch.jit.export
     def forward_encoder_chunk(
@@ -314,12 +296,10 @@ class Paraformer(ASRModel):
         return encoder_out, att_cache, cnn_cache
 
     @torch.jit.export
-    def forward_cif_peaks(self, alphas: torch.Tensor,
-                          token_nums: torch.Tensor) -> torch.Tensor:
+    def forward_cif_peaks(self, alphas: torch.Tensor, token_nums: torch.Tensor) -> torch.Tensor:
         cif2_token_nums = alphas.sum(-1)
         scale_alphas = alphas / (cif2_token_nums / token_nums).unsqueeze(1)
-        peaks = cif_without_hidden(scale_alphas,
-                                   self.predictor.predictor.threshold - 1e-4)
+        peaks = cif_without_hidden(scale_alphas, self.predictor.predictor.threshold - 1e-4)
 
         return peaks
 
@@ -336,15 +316,11 @@ class Paraformer(ASRModel):
             num_decoding_left_chunks)
 
         # cif predictor
-        acoustic_embed, token_num, _, _, tp_alphas, _, tp_mask = self.predictor(
-            encoder_out,
-            mask=encoder_out_mask,
-        )
+        acoustic_embed, token_num, _, _, tp_alphas, _, tp_mask = self.predictor(encoder_out,mask=encoder_out_mask,)
         token_num = token_num.floor().to(speech_lengths.dtype)
 
         # decoder
-        decoder_out, _, _ = self.decoder(encoder_out, encoder_out_mask,
-                                         acoustic_embed, token_num)
+        decoder_out, _ = self.decoder(encoder_out, encoder_out_mask, acoustic_embed, token_num)
         decoder_out = decoder_out.log_softmax(dim=-1)
 
         return {

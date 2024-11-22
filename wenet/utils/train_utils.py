@@ -252,8 +252,8 @@ def init_distributed(args):
     world_size = int(os.environ.get('WORLD_SIZE', 1))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     rank = int(os.environ.get('RANK', 0))
-    logging.info('training on multiple gpus, this gpu {}'.format(local_rank) +
-                 ', rank {}, world_size {}'.format(rank, world_size))
+    logging.info('training on multiple gpus, this gpu {}'.format(local_rank) + ', rank {}, world_size {}'.format(rank, world_size))
+
     if args.train_engine in ["torch_ddp", "torch_fsdp"]:
         if "cuda" in args.device:
             torch.cuda.set_device(local_rank)
@@ -264,6 +264,9 @@ def init_distributed(args):
         dist.init_process_group(args.dist_backend)
     elif args.train_engine == "deepspeed":
         deepspeed.init_distributed(dist_backend=args.dist_backend)
+    elif args.train_engine == "torch":
+        logging.info("Single GPU or non-distributed training mode detected.")
+        return world_size, local_rank, rank
     else:
         logging.error("not supported engine: {}".format(args.train_engine))
     return world_size, local_rank, rank
@@ -324,21 +327,15 @@ def check_modify_and_save_config(args, configs, symbol_table):
         configs['lora_conf']['lora_alpha'] = args.lora_alpha
         configs['lora_conf']['lora_dropout'] = args.lora_dropout
 
-    if configs["model"] == 'asr_model':
-        if 'input_dim' not in configs:
-            if 'fbank_conf' in configs['dataset_conf']:
-                input_dim = configs['dataset_conf']['fbank_conf'][
-                    'num_mel_bins']
-            elif 'log_mel_spectrogram_conf' in configs['dataset_conf']:
-                input_dim = configs['dataset_conf'][
-                    'log_mel_spectrogram_conf']['num_mel_bins']
-            else:
-                input_dim = configs['dataset_conf']['mfcc_conf'][
-                    'num_mel_bins']
+    input_dim = configs.get('input_dim', None)
+    if input_dim is None:
+        if 'fbank_conf' in configs['dataset_conf']:
+            input_dim = configs['dataset_conf']['fbank_conf']['num_mel_bins']
+        elif 'log_mel_spectrogram_conf' in configs['dataset_conf']:
+            input_dim = configs['dataset_conf']['log_mel_spectrogram_conf']['num_mel_bins']
         else:
-            input_dim = configs['input_dim']
-
-        configs['input_dim'] = input_dim
+            input_dim = configs['dataset_conf']['mfcc_conf']['num_mel_bins']
+    configs['input_dim'] = input_dim
 
     configs, _ = get_blank_id(configs, symbol_table)
     configs['output_dim'] = configs['vocab_size']
@@ -356,8 +353,7 @@ def check_modify_and_save_config(args, configs, symbol_table):
             fout.write(data)
 
     if configs["model_conf"].get("apply_non_blank_embedding", False):
-        logging.warn('Had better load a well trained model'
-                     'if apply_non_blank_embedding is true !!!')
+        logging.warn('Had better load a well trained model if apply_non_blank_embedding is true !!!')
 
     return configs
 
@@ -413,11 +409,14 @@ def wrap_cuda_model(args, model, configs=None):
         grad_ckpt = getattr(model.encoder, 'gradient_checkpointing', False)
     else:
         grad_ckpt = False
-    if args.train_engine == "torch_ddp":  # native pytorch ddp
+    if args.train_engine == "torch":  # native pytorch ddp
         device = torch.device(args.device)
         model.to(device)
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, find_unused_parameters=not grad_ckpt)
+    elif args.train_engine == "torch_ddp":  # native pytorch ddp
+        device = torch.device(args.device)
+        model.to(device)
+        # model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=not grad_ckpt)
+        model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=False)
     elif args.train_engine == "deepspeed":  # deepspeed
         # NOTE(xcsong): look in detail how the memory estimator API works:
         #   https://deepspeed.readthedocs.io/en/latest/memory.html#discussion
@@ -481,8 +480,7 @@ def wrap_cuda_model(args, model, configs=None):
         if args.fp16_grad_sync:
             from torch.distributed.algorithms.ddp_comm_hooks import (
                 default as comm_hooks, )
-            model.register_comm_hook(state=None,
-                                     hook=comm_hooks.fp16_compress_hook)
+            model.register_comm_hook(state=None, hook=comm_hooks.fp16_compress_hook)
 
     return model, device
 
@@ -688,6 +686,8 @@ def batch_forward(model, batch, scaler, info_dict, device):
         amp_autocast(enabled=dtype is not None,
                      dtype=dtype,
                      cache_enabled=False),
+        "torch":
+        amp_autocast(enabled=scaler is not None),
         "torch_ddp":
         amp_autocast(enabled=scaler is not None),
         "torch_fsdp":
@@ -715,7 +715,7 @@ def batch_backward(model, scaler, info_dict):
         #   ref: https://www.deepspeed.ai/tutorials/megatron/#using-the-training-api
         scaled_loss = model.backward(loss)
     else:
-        assert train_engine in ["torch_ddp", "torch_fsdp"]
+        assert train_engine in ["torch_ddp", "torch_fsdp", "torch"]
         scaled_loss = loss / accum_grad
         if scaler is not None:
             # fp16 (amp and fsdp)
@@ -763,7 +763,7 @@ def update_parameter_and_lr(model, optimizer, scheduler, scaler, info_dict):
         # fp16 (ddp fsdp)
         if scaler is not None:
             scaler.unscale_(optimizer)
-            if train_engine == "torch_ddp":
+            if train_engine == "torch_ddp" or train_engine == "torch":
                 grad_norm = clip_grad_norm_(model.parameters(), clip)
             else:
                 # fsdp
@@ -778,7 +778,7 @@ def update_parameter_and_lr(model, optimizer, scheduler, scaler, info_dict):
             scaler.step(optimizer)
             scaler.update()
         else:
-            if train_engine == "torch_ddp":
+            if train_engine == "torch_ddp" or train_engine == "torch":
                 grad_norm = clip_grad_norm_(model.parameters(), clip)
             else:
                 grad_norm = model.clip_grad_norm_(clip)
@@ -812,22 +812,18 @@ def log_per_step(writer, info_dict, timer: Optional[StepTimer] = None):
         if (train_engine == "deepspeed" and is_gradient_accumulation_boundary
             ) or (train_engine in ["torch_ddp", "torch_fsdp"] and
                   (batch_idx + 1) % accum_grad == 0):
-            writer.add_scalar('train/train_loss',
-                              tensor_to_scalar(loss_dict['loss']) * accum_grad,
-                              step)
+            writer.add_scalar('train/train_loss', tensor_to_scalar(loss_dict['loss']) * accum_grad, step)
             writer.add_scalar('train/grad_norm', info_dict['grad_norm'], step)
             for name, value in loss_dict.items():
                 if name != 'loss' and value is not None:
-                    writer.add_scalar('train/{}'.format(name),
-                                      tensor_to_scalar(value), step)
+                    writer.add_scalar('train/{}'.format(name), tensor_to_scalar(value), step)
             # lr
             for i, lr in enumerate(lrs):
                 writer.add_scalar('train/lr_{}'.format(i), lr, step)
     # CV Tensorboard
     elif "step_" in tag and rank == 0 and writer is not None:
         for name, value in loss_dict.items():
-            writer.add_scalar('cv/{}'.format(name), tensor_to_scalar(value),
-                              step)
+            writer.add_scalar('cv/{}'.format(name), tensor_to_scalar(value), step)
         logging.info(
             'Epoch {} Step {} CV info lr {} cv_loss {} rank {} acc {}'.format(
                 epoch, step + 1, lrs_to_str(lrs),
@@ -852,8 +848,7 @@ def log_per_step(writer, info_dict, timer: Optional[StepTimer] = None):
             if name != 'loss' and value is not None:
                 log_str += '{} {:.6f} '.format(name, tensor_to_scalar(value))
         if tag == "TRAIN":
-            log_str += 'lr {} grad_norm {:.6f} rank {}'.format(
-                lrs_to_str(lrs), info_dict['grad_norm'], rank)
+            log_str += 'lr {} grad_norm {:.6f} rank {}'.format(lrs_to_str(lrs), info_dict['grad_norm'], rank)
         logging.debug(log_str)
 
 
@@ -864,16 +859,14 @@ def log_per_epoch(writer, info_dict):
     rank = int(os.environ.get('RANK', 0))
     step = info_dict["step"]
     logging.info(
-        'Epoch {} Step {} CV info lr {} cv_loss {} rank {} acc {}'.format(
-            epoch, step, lrs_to_str(lrs), tensor_to_scalar(loss_dict["loss"]),
+        'Epoch {} Step {} CV info lr {} cv_loss {} rank {} acc {}'.format(epoch, step, lrs_to_str(lrs), tensor_to_scalar(loss_dict["loss"]),
             rank, tensor_to_scalar(loss_dict["acc"])))
 
     if int(os.environ.get('RANK', 0)) == 0:
         for i, lr in enumerate(info_dict["lrs"]):
             writer.add_scalar('epoch/lr_{}'.format(i), lr, epoch)
         for name, value in loss_dict.items():
-            writer.add_scalar('epoch/{}'.format(name), tensor_to_scalar(value),
-                              epoch)
+            writer.add_scalar('epoch/{}'.format(name), tensor_to_scalar(value), epoch)
 
 
 def freeze_modules(model, args):
@@ -899,8 +892,7 @@ def reinit_lora(model, args, configs, tokenizer, seed=777):
     dataset_conf = copy.deepcopy(configs['dataset_conf'])
     dataset_conf['batch_conf']['batch_size'] = lora_config['init_batch_size']
     dataset_type = configs.get('dataset', 'asr')
-    dataset = init_dataset(dataset_type, args.data_type, args.train_data,
-                           tokenizer, dataset_conf, True)
+    dataset = init_dataset(dataset_type, args.data_type, args.train_data, tokenizer, dataset_conf, True)
     dataloader = DataLoader(dataset,
                             batch_size=None,
                             pin_memory=args.pin_memory,
@@ -910,8 +902,7 @@ def reinit_lora(model, args, configs, tokenizer, seed=777):
                             prefetch_factor=args.prefetch)
     additional_kwargs = {}
     if lora_config["init_config"]["mode"] == "gradient":
-        named_grads = estimate_gradient(model, dataloader,
-                                        lora_config['init_iters'])
+        named_grads = estimate_gradient(model, dataloader, lora_config['init_iters'])
         additional_kwargs["named_grads"] = named_grads
     lora_config = SimpleNamespace(**lora_config["init_config"])
     for name, module in tqdm(
@@ -922,5 +913,4 @@ def reinit_lora(model, args, configs, tokenizer, seed=777):
         if isinstance(module, LoRALayer):
             reinit_lora_modules(name, module, lora_config, **additional_kwargs)
     # lora_init_model needs to be saved, w0 = w0 - A0 * B0
-    save_checkpoint(model, os.path.join(args.model_dir, "lora_init.pt"),
-                    infos={"tag": "lora_init", **configs})
+    save_checkpoint(model, os.path.join(args.model_dir, "lora_init.pt"), infos={"tag": "lora_init", **configs})

@@ -1,44 +1,43 @@
-input_dim: 560
-
-encoder: sanm_encoder
+encoder: conformer
 encoder_conf:
-  attention_dropout_rate: 0.0
-  attention_heads: 4
-  dropout_rate: 0.0
-  input_layer: paraformer_dummy
-  kernel_size: 11
-  linear_units: 2048
-  normalize_before: true
-  num_blocks: 50
-  output_size: 512
-  pos_enc_layer_type: abs_pos_paraformer
-  positional_dropout_rate: 0.0
-  sanm_shfit: 0
-  gradient_checkpointing: true
+    output_size: 256    # dimension of attention
+    attention_heads: 4
+    linear_units: 2048  # the number of units of position-wise feed forward
+    num_blocks: 12      # the number of encoder blocks
+    dropout_rate: 0.1
+    positional_dropout_rate: 0.1
+    attention_dropout_rate: 0.0
+    input_layer: conv2d # encoder input type, you can chose conv2d, conv2d6 and conv2d8
+    normalize_before: true
+    cnn_module_kernel: 15
+    use_cnn_module: True
+    activation_type: 'swish'
+    pos_enc_layer_type: 'rel_pos'
+    selfattention_layer_type: 'rel_selfattn'
 
-decoder: sanm_decoder
+decoder: paraformer
 decoder_conf:
-  att_layer_num: 16
-  attention_heads: 4
-  dropout_rate: 0.0
-  kernel_size: 11
-  linear_units: 2048
-  num_blocks: 16
-  positional_dropout_rate: 0.0
-  sanm_shfit: 0
-  self_attention_dropout_rate: 0.0
-  src_attention_dropout_rate: 0.0
-  gradient_checkpointing: true
+    attention_heads: 4
+    linear_units: 2048
+    num_blocks: 6
+    dropout_rate: 0.1
+    positional_dropout_rate: 0.1
+    self_attention_dropout_rate: 0.0
+    src_attention_dropout_rate: 0.0
 
-tokenizer: paraformer
+tokenizer: char
 tokenizer_conf:
-  seg_dict_path: exp/paraformer/large/seg_dict
+  symbol_table_path: '/ssd/zhuang/code/wenet/examples/aishell/s0/data/dict/lang_char.txt'
+  split_with_space: false
+  bpe_path: null
+  non_lang_syms_path: null
+  is_multilingual: false
+  num_languages: 1
   special_tokens:
     <blank>: 0
+    <unk>: 1
+    <sos>: 2
     <eos>: 2
-    <sos>: 1
-    <unk>: 8403
-  symbol_table_path: exp/paraformer/large/units.txt
 
 ctc: ctc
 ctc_conf:
@@ -46,7 +45,7 @@ ctc_conf:
 
 cmvn: global_cmvn
 cmvn_conf:
-  cmvn_file: exp/paraformer/large/global_cmvn
+  cmvn_file: '/ssd/zhuang/code/wenet/examples/aishell/s0/data/train/global_cmvn'
   is_json_cmvn: true
 
 model: paraformer
@@ -59,7 +58,7 @@ model_conf:
 predictor: paraformer_predictor
 predictor_conf:
   cnn_groups: 1
-  idim: 512
+  idim: 256
   l_order: 1
   noise_threshold2: 0.01
   r_order: 1
@@ -98,16 +97,16 @@ dataset_conf:
         sort_size: 500  # sort_size should be less than shuffle_size
     batch_conf:
         batch_type: 'static' # static or dynamic
-        batch_size: 28
+        batch_size: 16
 
 grad_clip: 5
-accum_grad: 1
-max_epoch: 60
-log_interval: 100
+accum_grad: 4
+max_epoch: 240
+log_interval: 250
 
 optim: adam
 optim_conf:
-  lr: 0.0005
-scheduler: warmuplr
+    lr: 0.002
+scheduler: warmuplr     # pytorch v1.1.0+ required
 scheduler_conf:
-  warmup_steps: 12000
+    warmup_steps: 25000
