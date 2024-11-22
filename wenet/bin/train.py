@@ -25,6 +25,7 @@ import torch.distributed as dist
 
 from torch.distributed.elastic.multiprocessing.errors import record
 from wenet.utils.common import lrs_to_str, TORCH_NPU_AVAILABLE  # noqa just ensure to check torch-npu
+from wenet.bin.model_summary import model_summary
 
 from wenet.utils.executor import Executor
 from wenet.utils.config import override_config
@@ -43,7 +44,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='training your network')
     parser.add_argument('--train_engine',
                         default='torch_ddp',
-                        choices=['torch_ddp', 'torch_fsdp', 'deepspeed'],
+                        choices=['torch_ddp', 'torch_fsdp', 'deepspeed', 'torch'],
                         help='Engine for paralleled training')
     # set default value of device to "cuda", avoiding the modify of original scripts
     parser.add_argument('--device',
@@ -70,8 +71,7 @@ def get_args():
 @record
 def main():
     args = get_args()
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(levelname)s %(message)s')
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
 
     # Set random seed
     torch.manual_seed(777)
@@ -89,18 +89,20 @@ def main():
     _, _, rank = init_distributed(args)
 
     # Get dataset & dataloader
-    train_dataset, cv_dataset, train_data_loader, cv_data_loader = \
-        init_dataset_and_dataloader(args, configs, tokenizer)
+    train_dataset, cv_dataset, train_data_loader, cv_data_loader = init_dataset_and_dataloader(args, configs, tokenizer)
 
     # Do some sanity checks and save config to arsg.model_dir
-    configs = check_modify_and_save_config(args, configs,
-                                           tokenizer.symbol_table)
+    configs = check_modify_and_save_config(args, configs, tokenizer.symbol_table)
 
     # Init asr model from configs
     model, configs = init_model(args, configs)
 
     if hasattr(args, 'lora_reinit') and args.lora_reinit:
         reinit_lora(model, args, configs, tokenizer)
+
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if local_rank == 0:
+        logging.info(f"{model_summary(model)}")
 
     # Check model is jitable & print model archtectures
     trace_and_print_model(args, model)
@@ -109,11 +111,11 @@ def main():
     writer = init_summarywriter(args)
 
     # Dispatch model from cpu to gpu
+
     model, device = wrap_cuda_model(args, model, configs)
 
     # Get optimizer & scheduler
-    model, optimizer, scheduler = init_optimizer_and_scheduler(
-        args, configs, model)
+    model, optimizer, scheduler = init_optimizer_and_scheduler(args, configs, model)
 
     # Save checkpoints
     save_model(model,
@@ -127,8 +129,7 @@ def main():
 
     # Get executor
     tag = configs["init_infos"].get("tag", "init")
-    executor = Executor(global_step=configs["init_infos"].get('step', -1),
-                        device=device)
+    executor = Executor(global_step=configs["init_infos"].get('step', -1), device=device)
 
     # Init scaler, used for pytorch amp mixed precision training
     scaler = init_scaler(args)
@@ -136,8 +137,7 @@ def main():
     # Start training loop
     start_epoch = configs["init_infos"].get('epoch', 0) + int("epoch_" in tag)
     # if save_interval in configs, steps mode else epoch mode
-    end_epoch = configs.get('max_epoch',
-                            100) if "save_interval" not in configs else 1
+    end_epoch = configs.get('max_epoch', 100) if "save_interval" not in configs else 1
     assert start_epoch <= end_epoch
     configs.pop("init_infos", None)
     final_epoch = None
@@ -145,20 +145,21 @@ def main():
         configs['epoch'] = epoch
 
         lrs = [group['lr'] for group in optimizer.param_groups]
-        logging.info('Epoch {} Step {} TRAIN info lr {} rank {}'.format(
-            epoch, executor.step, lrs_to_str(lrs), rank))
+        logging.info('Epoch {} Step {} TRAIN info lr {} rank {}'.format(epoch, executor.step, lrs_to_str(lrs), rank))
 
-        dist.barrier(
-        )  # NOTE(xcsong): Ensure all ranks start Train at the same time.
-        # NOTE(xcsong): Why we need a new group? see `train_utils.py::wenet_join`
-        group_join = dist.new_group(
-            backend="gloo", timeout=datetime.timedelta(seconds=args.timeout))
-        executor.train(model, optimizer, scheduler, train_data_loader,
-                       cv_data_loader, writer, configs, scaler, group_join)
-        dist.destroy_process_group(group_join)
 
-        dist.barrier(
-        )  # NOTE(xcsong): Ensure all ranks start CV at the same time.
+        if args.train_engine == 'torch':
+            executor.train(model, optimizer, scheduler, train_data_loader, cv_data_loader, writer, configs, scaler)
+        else:
+            dist.barrier()
+            # NOTE(xcsong): Ensure all ranks start Train at the same time.
+            # NOTE(xcsong): Why we need a new group? see `train_utils.py::wenet_join`
+            group_join = dist.new_group(backend="gloo", timeout=datetime.timedelta(seconds=args.timeout))
+            executor.train(model, optimizer, scheduler, train_data_loader, cv_data_loader, writer, configs, scaler, group_join)
+            dist.destroy_process_group(group_join)
+            dist.barrier()
+
+        # NOTE(xcsong): Ensure all ranks start CV at the same time.
         loss_dict = executor.cv(model, cv_data_loader, configs)
         info_dict = {
             'epoch': epoch,
@@ -177,13 +178,14 @@ def main():
 
     if final_epoch is not None and rank == 0:
         final_model_path = os.path.join(args.model_dir, 'final.pt')
-        os.remove(final_model_path) if os.path.exists(
-            final_model_path) else None
+        os.remove(final_model_path) if os.path.exists(final_model_path) else None
         os.symlink('{}.pt'.format(final_epoch), final_model_path)
         writer.close()
-    dist.barrier(
-    )  # NOTE(yktian): Ensure all ranks end Train before destroy process group.
-    dist.destroy_process_group()
+
+    if not args.train_engine == 'torch':
+        dist.barrier()
+        # NOTE(yktian): Ensure all ranks end Train before destroy process group.
+        dist.destroy_process_group()
 
 
 if __name__ == '__main__':

@@ -98,8 +98,7 @@ class TransformerDecoder(torch.nn.Module):
         self.embed = torch.nn.Sequential(
             torch.nn.Identity() if input_layer == "no_pos" else
             torch.nn.Embedding(vocab_size, attention_dim),
-            WENET_EMB_CLASSES[input_layer](attention_dim,
-                                           positional_dropout_rate),
+            WENET_EMB_CLASSES[input_layer](attention_dim, positional_dropout_rate),
         )
 
         assert layer_norm_type in ['layer_norm', 'rms_norm']
@@ -179,8 +178,7 @@ class TransformerDecoder(torch.nn.Module):
         tgt_mask = ~make_pad_mask(ys_in_lens, maxlen).unsqueeze(1)
         tgt_mask = tgt_mask.to(tgt.device)
         # m: (1, L, L)
-        m = subsequent_mask(tgt_mask.size(-1),
-                            device=tgt_mask.device).unsqueeze(0)
+        m = subsequent_mask(tgt_mask.size(-1), device=tgt_mask.device).unsqueeze(0)
         # tgt_mask: (B, L, L)
         tgt_mask = tgt_mask & m
         if self.use_sdpa:
@@ -189,8 +187,7 @@ class TransformerDecoder(torch.nn.Module):
 
         x, _ = self.embed(tgt)
         if self.gradient_checkpointing and self.training:
-            x = self.forward_layers_checkpointed(x, tgt_mask, memory,
-                                                 memory_mask)
+            x = self.forward_layers_checkpointed(x, tgt_mask, memory, memory_mask)
         else:
             x = self.forward_layers(x, tgt_mask, memory, memory_mask)
         if self.normalize_before:
@@ -200,12 +197,14 @@ class TransformerDecoder(torch.nn.Module):
         olens = tgt_mask.sum(1)
         return x, torch.tensor(0.0), olens
 
-    def forward_layers(self, x: torch.Tensor, tgt_mask: torch.Tensor,
-                       memory: torch.Tensor,
-                       memory_mask: torch.Tensor) -> torch.Tensor:
+    def forward_layers(
+            self,
+            x: torch.Tensor,
+            tgt_mask: torch.Tensor,
+            memory: torch.Tensor,
+            memory_mask: torch.Tensor) -> torch.Tensor:
         for layer in self.decoders:
-            x, tgt_mask, memory, memory_mask = layer(x, tgt_mask, memory,
-                                                     memory_mask)
+            x, tgt_mask, memory, memory_mask = layer(x, tgt_mask, memory, memory_mask)
         return x
 
     @torch.jit.unused

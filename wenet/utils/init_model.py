@@ -42,6 +42,9 @@ from wenet.ctl_model.asr_model_ctl import CTLModel
 from wenet.whisper.whisper import Whisper
 from wenet.utils.cmvn import load_cmvn
 from wenet.utils.checkpoint import load_checkpoint, load_trained_modules
+from wenet.paraformer.decoder import ParaformerSANDecoder
+
+from pprint import pprint
 
 
 WENET_ENCODER_CLASSES = {
@@ -60,6 +63,7 @@ WENET_DECODER_CLASSES = {
     "transformer": TransformerDecoder,
     "bitransformer": BiTransformerDecoder,
     "sanm_decoder": SanmDecoder,
+    "paraformer": ParaformerSANDecoder
 }
 
 WENET_CTC_CLASSES = {
@@ -92,13 +96,12 @@ WENET_MODEL_CLASSES = {
 def init_speech_model(args, configs):
     # TODO(xcsong): Forcefully read the 'cmvn' attribute.
     if configs.get('cmvn', None) == 'global_cmvn':
-        mean, istd = load_cmvn(configs['cmvn_conf']['cmvn_file'],
-                               configs['cmvn_conf']['is_json_cmvn'])
-        global_cmvn = GlobalCMVN(
-            torch.from_numpy(mean).float(),
-            torch.from_numpy(istd).float())
+        mean, istd = load_cmvn(configs['cmvn_conf']['cmvn_file'],  configs['cmvn_conf']['is_json_cmvn'])
+        global_cmvn = GlobalCMVN(torch.from_numpy(mean).float(), torch.from_numpy(istd).float())
     else:
         global_cmvn = None
+
+    configs['global_cmvn'] = global_cmvn
 
     input_dim = configs['input_dim']
     vocab_size = configs['output_dim']
@@ -114,9 +117,7 @@ def init_speech_model(args, configs):
         **configs['encoder_conf']['efficient_conf']
         if 'efficient_conf' in configs['encoder_conf'] else {})
 
-    decoder = WENET_DECODER_CLASSES[decoder_type](vocab_size,
-                                                  encoder.output_size(),
-                                                  **configs['decoder_conf'])
+    decoder = WENET_DECODER_CLASSES[decoder_type](vocab_size, encoder.output_size(), **configs['decoder_conf'])
 
     ctc = WENET_CTC_CLASSES[ctc_type](
         vocab_size,
@@ -125,13 +126,12 @@ def init_speech_model(args, configs):
         if 'ctc_conf' in configs else 0)
 
     model_type = configs.get('model', 'asr_model')
+
     if model_type == "transducer":
         predictor_type = configs.get('predictor', 'rnn')
         joint_type = configs.get('joint', 'transducer_joint')
-        predictor = WENET_PREDICTOR_CLASSES[predictor_type](
-            vocab_size, **configs['predictor_conf'])
-        joint = WENET_JOINT_CLASSES[joint_type](vocab_size,
-                                                **configs['joint_conf'])
+        predictor = WENET_PREDICTOR_CLASSES[predictor_type](vocab_size, **configs['predictor_conf'])
+        joint = WENET_JOINT_CLASSES[joint_type](vocab_size, **configs['joint_conf'])
         model = WENET_MODEL_CLASSES[model_type](
             vocab_size=vocab_size,
             blank=0,
@@ -140,13 +140,12 @@ def init_speech_model(args, configs):
             attention_decoder=decoder,
             joint=joint,
             ctc=ctc,
-            special_tokens=configs.get('tokenizer_conf',
-                                       {}).get('special_tokens', None),
+            special_tokens=configs.get('tokenizer_conf', {}).get('special_tokens', None),
             **configs['model_conf'])
+
     elif model_type == 'paraformer':
         predictor_type = configs.get('predictor', 'cif')
-        predictor = WENET_PREDICTOR_CLASSES[predictor_type](
-            **configs['predictor_conf'])
+        predictor = WENET_PREDICTOR_CLASSES[predictor_type](**configs['predictor_conf'])
         model = WENET_MODEL_CLASSES[model_type](
             vocab_size=vocab_size,
             encoder=encoder,
@@ -154,21 +153,22 @@ def init_speech_model(args, configs):
             predictor=predictor,
             ctc=ctc,
             **configs['model_conf'],
-            special_tokens=configs.get('tokenizer_conf',
-                                       {}).get('special_tokens', None),
+            special_tokens=configs.get('tokenizer_conf', {}).get('special_tokens', None),
         )
+
     elif model_type in WENET_SSL_MODEL_CLASS.keys():
         from wenet.ssl.init_model import init_model as init_ssl_model
         model = init_ssl_model(configs, encoder)
+
     else:
         model = WENET_MODEL_CLASSES[model_type](
             vocab_size=vocab_size,
             encoder=encoder,
             decoder=decoder,
             ctc=ctc,
-            special_tokens=configs.get('tokenizer_conf',
-                                       {}).get('special_tokens', None),
+            special_tokens=configs.get('tokenizer_conf', {}).get('special_tokens', None),
             **configs['model_conf'])
+
     return model, configs
 
 
@@ -182,8 +182,7 @@ def init_causal_llm(configs):
         vocab_size,
         decoder_only,
         **configs['model_conf'],
-        special_tokens=configs.get('tokenizer_conf',
-                                   {}).get('special_tokens', None),
+        special_tokens=configs.get('tokenizer_conf', {}).get('special_tokens', None),
     )
     return model, configs
 
@@ -213,7 +212,26 @@ def init_model(args, configs):
         if hasattr(args, 'lora_ckpt_path') and args.lora_ckpt_path:
             load_checkpoint(model, args.lora_ckpt_path)
 
-    print(configs)
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    freeze_param = configs.get("freeze_param", None)
+    if freeze_param is not None:
+        if "," in freeze_param:
+            freeze_param = eval(freeze_param)
+        if not isinstance(freeze_param, (list, tuple)):
+            freeze_param = (freeze_param,)
+        if local_rank == 0:
+            print ("freeze_param is not None: %s", freeze_param)
+        for t in freeze_param:
+            for k, p in model.named_parameters():
+                if k.startswith(t + ".") or k == t:
+                    if local_rank == 0:
+                        print (f"Setting {k}.requires_grad = False")
+                    p.requires_grad = False
+
+    if local_rank == 0:
+        pprint(configs)
+
     # Trye to tie some weights
     if hasattr(model, 'tie_or_clone_weights'):
         if not hasattr(args, 'jit'):
@@ -222,8 +240,5 @@ def init_model(args, configs):
 
     if hasattr(args, 'only_optimize_lora') and args.only_optimize_lora:
         mark_only_lora_as_trainable(model, bias='lora_only')
-
-    if int(os.environ.get('RANK', 0)) == 0:
-        print(configs)
 
     return model, configs

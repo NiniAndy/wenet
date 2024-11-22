@@ -16,19 +16,15 @@ fi
 export CUDA_VISIBLE_DEVICES="${gpu_list}"
 echo "CUDA_VISIBLE_DEVICES is ${CUDA_VISIBLE_DEVICES}"
 
-stage=0 # start from 0 if you need to start from data preparation
+stage=5
 stop_stage=5
 
-# You should change the following two parameters for multiple machine training,
-# see https://pytorch.org/docs/stable/elastic/run.html
 HOST_NODE_ADDR="localhost:0"
 num_nodes=1
 job_id=2023
 
-# The aishell dataset location, please change this to your own path
-# make sure of using absolute path. DO-NOT-USE relatvie path!
-data=/export/data/asr-data/OpenSLR/33/
-data_url=www.openslr.org/resources/33
+data=/data/nas/ASR_Datasets/data_aishell/
+
 
 nj=16
 dict=data/dict/lang_char.txt
@@ -58,9 +54,9 @@ num_workers=8
 prefetch=10
 
 # use average_checkpoint will get better result
-average_checkpoint=true
-decode_checkpoint=$dir/final.pt
+average_checkpoint=false
 average_num=30
+decode_checkpoint=$dir/avg_${average_num}.pt
 decode_modes="ctc_greedy_search ctc_prefix_beam_search attention attention_rescoring"
 
 train_engine=torch_ddp
@@ -70,11 +66,6 @@ deepspeed_save_states="model_only"
 
 . tools/parse_options.sh || exit 1;
 
-if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
-  echo "stage -1: Data Download"
-  local/download_and_untar.sh ${data} ${data_url} data_aishell
-  local/download_and_untar.sh ${data} ${data_url} resource_aishell
-fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
   # Data preparation
@@ -190,6 +181,8 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
   # Please specify decoding_chunk_size for unified streaming and
   # non-streaming model. The default value is -1, which is full chunk
   # for non-streaming inference.
+  result_dir="${decode_checkpoint}-inference"
+  mkdir -p $result_dir
   decoding_chunk_size=
   ctc_weight=0.3
   reverse_weight=0.5
@@ -204,11 +197,11 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     --blank_penalty 0.0 \
     --ctc_weight $ctc_weight \
     --reverse_weight $reverse_weight \
-    --result_dir $dir \
+    --result_dir $result_dir \
     ${decoding_chunk_size:+--decoding_chunk_size $decoding_chunk_size}
   for mode in ${decode_modes}; do
     python tools/compute-wer.py --char=1 --v=1 \
-      data/test/text $dir/$mode/text > $dir/$mode/wer
+      data/test/text $result_dir/$mode/text > $result_dir/$mode/wer
   done
 fi
 

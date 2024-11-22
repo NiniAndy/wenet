@@ -39,15 +39,14 @@ class Executor:
         self.device = device
 
     def train(self, model, optimizer, scheduler, train_data_loader,
-              cv_data_loader, writer, configs, scaler, group_join):
+              cv_data_loader, writer, configs, scaler, group_join=None):
         ''' Train one epoch
         '''
         if self.train_step_timer is None:
             self.train_step_timer = StepTimer(self.step)
         model.train()
         info_dict = copy.deepcopy(configs)
-        logging.info('using accumulate grad, new batch size is {} times'
-                     ' larger than before'.format(info_dict['accum_grad']))
+        logging.info('using accumulate grad, new batch size is {} times larger than before'.format(info_dict['accum_grad']))
         # A context manager to be used in conjunction with an instance of
         # torch.nn.parallel.DistributedDataParallel to be able to train
         # with uneven inputs across participating processes.
@@ -61,8 +60,10 @@ class Executor:
                 info_dict["tag"] = "TRAIN"
                 info_dict["step"] = self.step
                 info_dict["batch_idx"] = batch_idx
-                if wenet_join(group_join, info_dict):
+                if group_join is not None and wenet_join(group_join, info_dict):
                     break
+                # if wenet_join(group_join, info_dict):
+                #     break
 
                 if batch_dict["target_lengths"].size(0) == 0:
                     continue
@@ -71,9 +72,7 @@ class Executor:
                 # Disable gradient synchronizations across DDP processes.
                 # Within this context, gradients will be accumulated on module
                 # variables, which will later be synchronized.
-                if info_dict.get("train_engine", "torch_ddp") in [
-                        "torch_ddp", "torch_fsdp"
-                ] and (batch_idx + 1) % info_dict["accum_grad"] != 0:
+                if info_dict.get("train_engine", "torch_ddp") in ["torch_ddp", "torch_fsdp"] and (batch_idx + 1) % info_dict["accum_grad"] != 0:
                     context = model.no_sync
                 # Used for single gpu training and DDP gradient synchronization
                 # processes.
@@ -81,19 +80,14 @@ class Executor:
                     context = nullcontext
 
                 with context():
-                    info_dict = batch_forward(model, batch_dict, scaler,
-                                              info_dict, self.device)
+                    info_dict = batch_forward(model, batch_dict, scaler, info_dict, self.device)
                     info_dict = batch_backward(model, scaler, info_dict)
 
-                info_dict = update_parameter_and_lr(model, optimizer,
-                                                    scheduler, scaler,
-                                                    info_dict)
+                info_dict = update_parameter_and_lr(model, optimizer, scheduler, scaler, info_dict)
                 # write training: tensorboard && log
                 log_per_step(writer, info_dict, timer=self.train_step_timer)
                 save_interval = info_dict.get('save_interval', sys.maxsize)
-                if (self.step +
-                        1) % save_interval == 0 and self.step != 0 and (
-                            batch_idx + 1) % info_dict["accum_grad"] == 0:
+                if (self.step +1) % save_interval == 0 and self.step != 0 and (batch_idx + 1) % info_dict["accum_grad"] == 0:
                     import torch.distributed as dist
                     # Ensure all ranks start CV at the same time in step mode
                     dist.barrier()
@@ -114,8 +108,7 @@ class Executor:
                     log_per_step(writer, info_dict)
                     # Ensure all ranks start Train at the same time in step mode
                     dist.barrier()
-                self.step += 1 if (batch_idx +
-                                   1) % info_dict["accum_grad"] == 0 else 0
+                self.step += 1 if (batch_idx + 1) % info_dict["accum_grad"] == 0 else 0
 
     def cv(self, model, cv_data_loader, configs):
         ''' Cross validation on
