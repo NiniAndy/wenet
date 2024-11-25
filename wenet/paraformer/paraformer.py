@@ -30,128 +30,92 @@ from wenet.transformer.search import (DecodeResult, ctc_greedy_search,
                                       ctc_prefix_beam_search)
 from wenet.utils.common import IGNORE_ID, add_sos_eos, th_accuracy
 from wenet.utils.mask import make_non_pad_mask
+from wenet.utils.class_module import WENET_PREDICTOR_CLASSES
+from wenet.transducer.predictor import PredictorBase
 
 
-class Predictor(torch.nn.Module):
 
-    def __init__(
-        self,
-        idim,
-        l_order,
-        r_order,
-        threshold=1.0,
-        dropout=0.1,
-        smooth_factor=1.0,
-        noise_threshold=0.0,
-        tail_threshold=0.45,
-        residual=True,
-        cnn_groups=0,
-        smooth_factor2=0.25,
-        noise_threshold2=0.01,
-        upsample_times=3,
-    ):
-        super().__init__()
-        self.predictor = Cif(idim, l_order, r_order, threshold, dropout,
-                             smooth_factor, noise_threshold, tail_threshold,
-                             residual, cnn_groups)
 
-        # accurate timestamp branch
-        self.smooth_factor2 = smooth_factor2
-        self.noise_threshold2 = noise_threshold
-        self.upsample_times = upsample_times
-        self.noise_threshold2 = noise_threshold2
-        self.tp_upsample_cnn = torch.nn.ConvTranspose1d(
-            idim, idim, self.upsample_times, self.upsample_times)
-        self.tp_blstm = torch.nn.LSTM(idim,
-                                      idim,
-                                      1,
-                                      bias=True,
-                                      batch_first=True,
-                                      dropout=0.0,
-                                      bidirectional=True)
-        self.tp_output = torch.nn.Linear(idim * 2, 1)
+# class Paraformer(ASRModel):
+""" Paraformer: Fast and Accurate Parallel Transformer for
+    Non-autoregressive End-to-End Speech Recognition
+    see https://arxiv.org/pdf/2206.08317.pdf
 
-    def forward(self,
-                hidden,
-                target_label: Optional[torch.Tensor] = None,
-                mask: torch.Tensor = torch.tensor(0),
-                ignore_id: int = -1,
-                mask_chunk_predictor: Optional[torch.Tensor] = None,
-                target_label_length: Optional[torch.Tensor] = None):
+"""
 
-        acoustic_embeds, token_num, alphas, cif_peak = self.predictor(
-            hidden, target_label, mask, ignore_id, mask_chunk_predictor,
-            target_label_length)
-
-        output, (_, _) = self.tp_blstm(
-            self.tp_upsample_cnn(hidden.transpose(1, 2)).transpose(1, 2))
-        tp_alphas = torch.sigmoid(self.tp_output(output))
-        tp_alphas = torch.nn.functional.relu(tp_alphas * self.smooth_factor2 -
-                                             self.noise_threshold2)
-
-        mask = mask.repeat(1, self.upsample_times,
-                           1).transpose(-1,
-                                        -2).reshape(tp_alphas.shape[0], -1)
-        mask = mask.unsqueeze(-1)
-        tp_alphas = tp_alphas * mask
-        tp_alphas = tp_alphas.squeeze(-1)
-        tp_token_num = tp_alphas.sum(-1)
-
-        return acoustic_embeds, token_num, alphas, cif_peak, tp_alphas, \
-            tp_token_num, mask
-
+    # def __init__(self,
+    #              vocab_size: int,
+    #              encoder: BaseEncoder,
+    #              decoder: TransformerDecoder,
+    #              predictor: Predictor,
+    #              ctc: CTC,
+    #              ctc_weight: float = 0.5,
+    #              ignore_id: int = -1,
+    #              lsm_weight: float = 0,
+    #              length_normalized_loss: bool = False,
+    #              sampler: bool = True,
+    #              sampling_ratio: float = 0.75,
+    #              add_eos: bool = False,
+    #              special_tokens: Optional[Dict] = None,
+    #              apply_non_blank_embedding: bool = False):
+    #     # assert isinstance(encoder, SanmEncoder), isinstance(decoder, SanmDecoder)
+    #     super().__init__(
+    #         vocab_size,
+    #         encoder,
+    #         decoder,
+    #         ctc,
+    #         ctc_weight,
+    #         IGNORE_ID,
+    #         0.0,
+    #         lsm_weight,
+    #         length_normalized_loss,
+    #         None,
+    #         apply_non_blank_embedding)
 
 class Paraformer(ASRModel):
-    """ Paraformer: Fast and Accurate Parallel Transformer for
-        Non-autoregressive End-to-End Speech Recognition
-        see https://arxiv.org/pdf/2206.08317.pdf
-
-    """
-
-    def __init__(self,
-                 vocab_size: int,
-                 encoder: BaseEncoder,
-                 decoder: TransformerDecoder,
-                 predictor: Predictor,
-                 ctc: CTC,
-                 ctc_weight: float = 0.5,
-                 ignore_id: int = -1,
-                 lsm_weight: float = 0,
-                 length_normalized_loss: bool = False,
-                 sampler: bool = True,
-                 sampling_ratio: float = 0.75,
-                 add_eos: bool = False,
-                 special_tokens: Optional[Dict] = None,
-                 apply_non_blank_embedding: bool = False):
-        # assert isinstance(encoder, SanmEncoder), isinstance(decoder, SanmDecoder)
+    def __init__(
+            self,
+            input_dim: int,
+            output_dim: int,
+            encoder: BaseEncoder,
+            encoder_conf: dict,
+            predictor: PredictorBase,
+            predictor_conf: dict,
+            decoder: TransformerDecoder,
+            decoder_conf: dict,
+            ctc: CTC,
+            ctc_conf: dict,
+            cmvn: Optional[str] = None,
+            cmvn_conf: Optional[dict] = None,
+            **kwargs: dict,
+    ):
         super().__init__(
-            vocab_size,
+            input_dim,
+            output_dim,
             encoder,
+            encoder_conf,
             decoder,
+            decoder_conf,
             ctc,
-            ctc_weight,
-            IGNORE_ID,
-            0.0,
-            lsm_weight,
-            length_normalized_loss,
-            None,
-            apply_non_blank_embedding)
-        if ctc_weight == 0.0:
+            ctc_conf,
+            cmvn,
+            cmvn_conf,
+            **kwargs,
+            )
+
+        if self.ctc_weight == 0.0:
             del ctc
+
+        predictor = WENET_PREDICTOR_CLASSES[predictor](**predictor_conf)
         self.predictor = predictor
 
-        assert special_tokens is not None
-        self.sos = special_tokens['<sos>']
-        self.eos = special_tokens['<eos>']
+        assert self.special_tokens is not None
+        self.sos = self.special_tokens['<sos>']
+        self.eos = self.special_tokens['<eos>']
 
-        self.sampler = sampler
-        self.sampling_ratio = sampling_ratio
-
-        # NOTE(Mddct): add eos in tail of labels for predictor
-        # eg:
-        #    gt:         你 好 we@@ net
-        #    labels:     你 好 we@@ net eos
-        self.add_eos = add_eos
+        self.sampling_ratio = kwargs['model_conf'].get('sampling_ratio', 0.0)
+        self.sampler = self.sampling_ratio > 0.0
+        self.add_eos = kwargs['model_conf'].get('add_eos', False)
 
     @torch.jit.unused
     def forward(
@@ -259,18 +223,26 @@ class Paraformer(ASRModel):
         self,
         speech: torch.Tensor,
         speech_lengths: torch.Tensor,
-        decoding_chunk_size: int = 0,
+        decoding_chunk_size: int = -1,
         num_decoding_left_chunks: int = -1,
         simulate_streaming: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO(Mddct): support chunk by chunk
-        assert simulate_streaming is False
-        features, features_lens = self.lfr(speech, speech_lengths)
-        features_lens = features_lens.to(speech_lengths.dtype)
-        encoder_out, encoder_out_mask = self.encoder(features, features_lens,
-                                                     decoding_chunk_size,
-                                                     num_decoding_left_chunks)
-        return encoder_out, encoder_out_mask
+        # Let's assume B = batch_size
+        # 1. Encoder
+        if simulate_streaming and decoding_chunk_size > 0:
+            encoder_out, encoder_mask = self.encoder.forward_chunk_by_chunk(
+                speech,
+                decoding_chunk_size=decoding_chunk_size,
+                num_decoding_left_chunks=num_decoding_left_chunks
+            )  # (B, maxlen, encoder_dim)
+        else:
+            encoder_out, encoder_mask = self.encoder(
+                speech,
+                speech_lengths,
+                decoding_chunk_size=decoding_chunk_size,
+                num_decoding_left_chunks=num_decoding_left_chunks
+            )  # (B, maxlen, encoder_dim)
+        return encoder_out, encoder_mask
 
     @torch.jit.export
     def forward_paraformer(

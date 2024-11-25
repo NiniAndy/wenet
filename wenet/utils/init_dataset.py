@@ -1,7 +1,7 @@
 import copy
 from typing import Optional
-from wenet.dataset.dataset import Dataset
 
+from wenet.dataset.dataset import Dataset
 from wenet.text.base_tokenizer import BaseTokenizer
 
 

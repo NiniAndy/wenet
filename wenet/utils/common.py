@@ -14,13 +14,12 @@
 # Modified from ESPnet(https://github.com/espnet/espnet)
 """Unility functions for Transformer."""
 
-import math
 import time
 from typing import List, Tuple
 
+import math
 import torch
 from torch.nn.utils.rnn import pad_sequence
-
 from whisper.tokenizer import LANGUAGES as WhiserLanguages
 
 WHISPER_LANGS = tuple(WhiserLanguages.keys())

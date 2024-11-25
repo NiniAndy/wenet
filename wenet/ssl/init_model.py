@@ -14,6 +14,5 @@ def init_model(configs, encoder):
     assert 'model' in configs
     model_type = configs['model']
     assert model_type in WENET_SSL_MODEL_CLASS.keys()
-    model = WENET_SSL_MODEL_CLASS[model_type](encoder=encoder,
-                                              **configs['model_conf'])
+    model = WENET_SSL_MODEL_CLASS[model_type](encoder=encoder, **configs['model_conf'])
     return model

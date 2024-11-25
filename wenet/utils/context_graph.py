@@ -16,9 +16,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from wenet.text.tokenize_utils import tokenize_by_bpe_model
-from typing import Dict, List, Tuple
 from collections import deque
+from typing import Dict, List, Tuple
+
+from wenet.text.tokenize_utils import tokenize_by_bpe_model
 
 
 def tokenize(context_list_path, symbol_table, bpe_model=None):

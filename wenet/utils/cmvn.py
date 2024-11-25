@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import json
-import math
 
+import math
 import numpy as np
 
 

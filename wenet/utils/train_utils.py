@@ -13,42 +13,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from contextlib import nullcontext
 import copy
-from typing import List, Optional
-
-import deepspeed
 import json
 import logging
 import os
+from contextlib import nullcontext
+from typing import List, Optional
+
+import deepspeed
 import torch
-import yaml
-
-import torch.optim as optim
 import torch.distributed as dist
-
+import torch.optim as optim
+import yaml
+from deepspeed.runtime.zero.stage3 import (
+    estimate_zero3_model_states_mem_needs_all_live)
+from deepspeed.runtime.zero.stage_1_and_2 import (
+    estimate_zero2_model_states_mem_needs_all_live)
+from deepspeed.utils.zero_to_fp32 import (
+    convert_zero_checkpoint_to_fp32_state_dict)
 from tensorboardX import SummaryWriter
-from torch.utils.data import DataLoader
-from torch.nn.utils import clip_grad_norm_
 from torch.distributed.fsdp import (FullyShardedDataParallel as FSDP,
                                     CPUOffload, MixedPrecision,
                                     sharded_grad_scaler, ShardingStrategy)
-from deepspeed.runtime.zero.stage_1_and_2 import (
-    estimate_zero2_model_states_mem_needs_all_live)
-from deepspeed.runtime.zero.stage3 import (
-    estimate_zero3_model_states_mem_needs_all_live)
-from deepspeed.utils.zero_to_fp32 import (
-    convert_zero_checkpoint_to_fp32_state_dict)
+from torch.nn.utils import clip_grad_norm_
+from torch.utils.data import DataLoader
+
 from wenet.utils.checkpoint import save_checkpoint
 from wenet.utils.common import (StepTimer, get_nested_attribute, lrs_to_str,
                                 tensor_to_scalar)
+from wenet.utils.common import TORCH_NPU_AVAILABLE
+from wenet.utils.ctc_utils import get_blank_id
 from wenet.utils.fsdp_utils import (check_gradient_checkpoint, fsdp_save_model,
                                     apply_fsdp_checkpointing,
                                     wenet_fsdp_wrap_policy)
-from wenet.utils.scheduler import WarmupLR, NoamHoldAnnealing
-from wenet.utils.ctc_utils import get_blank_id
-from wenet.utils.common import TORCH_NPU_AVAILABLE
 from wenet.utils.init_dataset import init_dataset
+from wenet.utils.scheduler import WarmupLR, NoamHoldAnnealing
 
 
 def add_model_args(parser):
@@ -313,8 +312,7 @@ def check_modify_and_save_config(args, configs, symbol_table):
         else:
             configs["dtype"] = "fp32"
         assert ds_configs["train_micro_batch_size_per_gpu"] == 1
-        assert ds_configs["gradient_accumulation_steps"] == configs[
-            'accum_grad']
+        assert ds_configs["gradient_accumulation_steps"] == configs['accum_grad']
         assert ds_configs["gradient_clipping"] == configs['grad_clip']
         assert ds_configs["steps_per_print"] == configs['log_interval']
 
@@ -347,6 +345,8 @@ def check_modify_and_save_config(args, configs, symbol_table):
 
     # Save configs to model_dir/train.yaml for inference and export
     if int(os.environ.get('RANK', 0)) == 0:
+        if not os.path.exists(args.model_dir):
+            os.makedirs(args.model_dir)
         saved_config_path = os.path.join(args.model_dir, 'train.yaml')
         with open(saved_config_path, 'w') as fout:
             data = yaml.dump(configs)
@@ -613,13 +613,9 @@ def save_model(model, info_dict):
         #   save the general model params. see:
         #   https://github.com/microsoft/DeepSpeed/issues/2993
         with torch.no_grad():
-            model.save_checkpoint(save_dir=model_dir,
-                                  tag=tag,
-                                  client_state=info_dict)
+            model.save_checkpoint(save_dir=model_dir, tag=tag, client_state=info_dict)
             if info_dict["save_states"] == "model_only" and rank == 0:
-                convert_zero_checkpoint_to_fp32_state_dict(model_dir,
-                                                           save_model_path,
-                                                           tag=tag)
+                convert_zero_checkpoint_to_fp32_state_dict(model_dir, save_model_path, tag=tag)
                 os.system("rm -rf {}/{}".format(model_dir, tag))
 
     elif info_dict['train_engine'] == "torch_fsdp":
@@ -632,6 +628,7 @@ def save_model(model, info_dict):
         with open("{}/{}.yaml".format(model_dir, tag), 'w') as fout:
             data = yaml.dump(info_dict)
             fout.write(data)
+    return save_model_path
 
 
 def wenet_join(group_join, info_dict):
@@ -914,3 +911,75 @@ def reinit_lora(model, args, configs, tokenizer, seed=777):
             reinit_lora_modules(name, module, lora_config, **additional_kwargs)
     # lora_init_model needs to be saved, w0 = w0 - A0 * B0
     save_checkpoint(model, os.path.join(args.model_dir, "lora_init.pt"), infos={"tag": "lora_init", **configs})
+
+
+def monitor_save(loss_dict, monitor_list, model_list, monitor="loss", save_n=10):
+    del_model_path = None
+    monitor_dict = {"best": False, "save_flag": False}
+
+    if monitor not in loss_dict:
+        RuntimeError(f"monitor: {monitor} not in loss_dict: {loss_dict}")
+    monitor_index = loss_dict[monitor]
+
+    if monitor == "acc":
+        # 初始化best acc
+        if "best_acc" not in monitor_dict:
+            monitor_dict["best_acc"] = 0.0
+
+        # 如果monitor_index比monitor_list中的最小值大，则保存
+        if len(monitor_list) < save_n:
+            monitor_list.append(monitor_index)
+            monitor_dict["save_flag"] = True
+
+            if monitor_index > monitor_dict["best_acc"]:
+                monitor_dict["best_acc"] = monitor_index
+                monitor_dict["best"] = True
+        else:
+            if monitor_index > min(monitor_list):
+                del_id  = monitor_list.index(min(monitor_list))
+                del_model_path = model_list[del_id]
+                os.remove(del_model_path)
+                del_model_yaml = del_model_path.replace(".pt", ".yaml")
+                os.remove(del_model_yaml)
+                model_list.remove(del_model_path)
+                monitor_list.remove(min(monitor_list))
+                monitor_list.append(monitor_index)
+                monitor_dict["save_flag"] = True
+            if monitor_index >= max(monitor_list):
+                monitor_dict["best_acc"] = monitor_index
+                monitor_dict["best"] = True
+
+    elif monitor == "loss":
+        # 初始化best loss
+        if "best_loss" not in monitor_dict:
+            monitor_dict["best_loss"] = float("inf")
+
+        if len(monitor_list) < save_n:
+            monitor_list.append(monitor_index)
+            monitor_dict["save_flag"] = True
+
+            if monitor_index < monitor_dict["best_loss"]:
+                monitor_dict["best_loss"] = monitor_index
+                monitor_dict["best"] = True
+
+        else:
+            if monitor_index < max(monitor_list):
+                del_id = monitor_list.index(max(monitor_list))
+                del_model_path = model_list[del_id]
+                os.remove(del_model_path)
+                del_model_yaml = del_model_path.replace(".pt", ".yaml")
+                os.remove(del_model_yaml)
+                model_list.remove(del_model_path)
+                monitor_list.remove(max(monitor_list))
+                monitor_list.append(monitor_index)
+                monitor_dict["save_flag"] = True
+            if monitor_index <= min(monitor_list):
+                monitor_dict["best_loss"] = monitor_index
+                monitor_dict["best"] = True
+
+    else:
+        raise ValueError(f"monitor: {monitor} not supported")
+
+    return monitor_dict, monitor_list, model_list, del_model_path
+
+

@@ -12,82 +12,129 @@ from wenet.transformer.asr_model import ASRModel
 from wenet.transformer.ctc import CTC
 from wenet.transformer.decoder import BiTransformerDecoder, TransformerDecoder
 from wenet.transformer.label_smoothing_loss import LabelSmoothingLoss
-from wenet.utils.common import (IGNORE_ID, add_blank, add_sos_eos,
-                                reverse_pad_list, TORCH_NPU_AVAILABLE)
+from wenet.utils.common import (IGNORE_ID, add_blank, add_sos_eos, reverse_pad_list, TORCH_NPU_AVAILABLE)
+from wenet.utils.class_module import WENET_PREDICTOR_CLASSES, WENET_JOINT_CLASSES
+from wenet.transformer.encoder import BaseEncoder
 
+
+# class Transducer(ASRModel):
+#     """Transducer-ctc-attention hybrid Encoder-Predictor-Decoder model"""
+#
+#     def __init__(
+#         self,
+#         vocab_size: int,
+#         blank: int,
+#         encoder: nn.Module,
+#         predictor: PredictorBase,
+#         joint: nn.Module,
+#         attention_decoder: Optional[Union[TransformerDecoder,
+#                                           BiTransformerDecoder]] = None,
+#         ctc: Optional[CTC] = None,
+#         ctc_weight: float = 0,
+#         ignore_id: int = IGNORE_ID,
+#         reverse_weight: float = 0.0,
+#         lsm_weight: float = 0.0,
+#         length_normalized_loss: bool = False,
+#         transducer_weight: float = 1.0,
+#         attention_weight: float = 0.0,
+#         enable_k2: bool = False,
+#         delay_penalty: float = 0.0,
+#         warmup_steps: float = 25000,
+#         lm_only_scale: float = 0.25,
+#         am_only_scale: float = 0.0,
+#         special_tokens: dict = None,
+#     ) -> None:
+#         assert attention_weight + ctc_weight + transducer_weight == 1.0
+#         super().__init__(vocab_size,
+#                          encoder,
+#                          attention_decoder,
+#                          ctc,
+#                          ctc_weight,
+#                          ignore_id,
+#                          reverse_weight,
+#                          lsm_weight,
+#                          length_normalized_loss,
+#                          special_tokens=special_tokens)
 
 class Transducer(ASRModel):
     """Transducer-ctc-attention hybrid Encoder-Predictor-Decoder model"""
 
     def __init__(
-        self,
-        vocab_size: int,
-        blank: int,
-        encoder: nn.Module,
-        predictor: PredictorBase,
-        joint: nn.Module,
-        attention_decoder: Optional[Union[TransformerDecoder,
-                                          BiTransformerDecoder]] = None,
-        ctc: Optional[CTC] = None,
-        ctc_weight: float = 0,
-        ignore_id: int = IGNORE_ID,
-        reverse_weight: float = 0.0,
-        lsm_weight: float = 0.0,
-        length_normalized_loss: bool = False,
-        transducer_weight: float = 1.0,
-        attention_weight: float = 0.0,
-        enable_k2: bool = False,
-        delay_penalty: float = 0.0,
-        warmup_steps: float = 25000,
-        lm_only_scale: float = 0.25,
-        am_only_scale: float = 0.0,
-        special_tokens: dict = None,
-    ) -> None:
-        assert attention_weight + ctc_weight + transducer_weight == 1.0
-        super().__init__(vocab_size,
-                         encoder,
-                         attention_decoder,
-                         ctc,
-                         ctc_weight,
-                         ignore_id,
-                         reverse_weight,
-                         lsm_weight,
-                         length_normalized_loss,
-                         special_tokens=special_tokens)
+            self,
+            input_dim: int,
+            output_dim: int,
+            encoder: BaseEncoder,
+            encoder_conf: dict,
+            predictor: PredictorBase,
+            predictor_conf: dict,
+            joint: nn.Module,
+            joint_conf: dict,
+            decoder: TransformerDecoder,
+            decoder_conf: dict,
+            ctc: CTC,
+            ctc_conf: dict,
+            cmvn: Optional[str] = None,
+            cmvn_conf: Optional[dict] = None,
+            **kwargs: dict,
+    ):
+        super().__init__(
+            input_dim,
+            output_dim,
+            encoder,
+            encoder_conf,
+            decoder,
+            decoder_conf,
+            ctc,
+            ctc_conf,
+            cmvn,
+            cmvn_conf,
+            **kwargs,
+            )
+
+        vocab_size = output_dim
+        blank = kwargs["ctc_conf"].get('ctc_blank_id', 0)
+        predictor = WENET_PREDICTOR_CLASSES[predictor](vocab_size, **predictor_conf)
+        joint = WENET_JOINT_CLASSES[joint](vocab_size, **joint_conf)
 
         self.blank = blank
-        self.transducer_weight = transducer_weight
+        self.transducer_weight = kwargs["model_conf"].get('transducer_weight', 1.0)
         self.attention_decoder_weight = 1 - self.transducer_weight - self.ctc_weight
+        if self.attention_decoder_weight == 0:
+            self.decoder = None
 
         self.predictor = predictor
         self.joint = joint
         self.bs = None
 
         # k2 rnnt loss
-        self.enable_k2 = enable_k2
-        self.delay_penalty = delay_penalty
-        if delay_penalty != 0.0:
+        self.enable_k2 = kwargs["model_conf"].get('enable_k2', False)
+        self.delay_penalty = kwargs["model_conf"].get('delay_penalty', 0.0)
+        if self.delay_penalty  != 0.0:
             assert self.enable_k2 is True
-        self.lm_only_scale = lm_only_scale
-        self.am_only_scale = am_only_scale
-        self.warmup_steps = warmup_steps
-        self.simple_am_proj: Optional[nn.Linear] = None
-        self.simple_lm_proj: Optional[nn.Linear] = None
-        if self.enable_k2:
-            self.simple_am_proj = torch.nn.Linear(self.encoder.output_size(),
-                                                  vocab_size)
-            self.simple_lm_proj = torch.nn.Linear(self.predictor.output_size(),
-                                                  vocab_size)
+        self.lm_only_scale = kwargs["model_conf"].get('lm_only_scale', 0.25)
+        self.am_only_scale = kwargs["model_conf"].get('am_only_scale', 0.0)
+        self.warmup_steps = kwargs["model_conf"]['self.delay_penalty'].get('warmup_steps', 25000)
+
+        if kwargs["model_conf"].get('simple_am_proj', None) is not None:
+            self.simple_am_proj = torch.nn.Linear(encoder.output_size(), vocab_size)
+        else:
+            self.simple_am_proj = None
+        if kwargs["model_conf"].get('simple_lm_proj', None) is not None:
+            self.simple_lm_proj = torch.nn.Linear(predictor.output_size(), vocab_size)
+        else:
+            self.simple_lm_proj = None
+
+        assert  self.attention_weight +  self.ctc_weight +  self.transducer_weight == 1.0
 
         # Note(Mddct): decoder also means predictor in transducer,
         # but here decoder is attention decoder
         del self.criterion_att
-        if attention_decoder is not None:
+        if self.decoder is not None:
             self.criterion_att = LabelSmoothingLoss(
                 size=vocab_size,
-                padding_idx=ignore_id,
-                smoothing=lsm_weight,
-                normalize_length=length_normalized_loss,
+                padding_idx=self.ignore_id,
+                smoothing=self.lsm_weight,
+                normalize_length=self.length_normalized_loss,
             )
 
     @torch.jit.unused

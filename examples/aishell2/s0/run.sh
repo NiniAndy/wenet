@@ -16,7 +16,7 @@ fi
 export CUDA_VISIBLE_DEVICES="${gpu_list}"
 echo "CUDA_VISIBLE_DEVICES is ${CUDA_VISIBLE_DEVICES}"
 stage=0 # start from 0 if you need to start from data preparation
-stop_stage=6
+stop_stage=3
 
 # You should change the following two parameters for multiple machine training,
 # see https://pytorch.org/docs/stable/elastic/run.html
@@ -27,27 +27,22 @@ job_id=2023
 # modify this to your AISHELL-2 data path
 # Note: the evaluation data (dev & test) is available at AISHELL.
 # Please download it from http://aishell-eval.oss-cn-beijing.aliyuncs.com/TEST%26DEV%20DATA.zip
-trn_set=/mnt/nfs/ptm1/open-data/AISHELL-2/iOS/data
-dev_set=/mnt/nfs/ptm1/open-data/AISHELL-DEV-TEST-SET/iOS/dev
-tst_set=/mnt/nfs/ptm1/open-data/AISHELL-DEV-TEST-SET/iOS/test
+trn_set=/data/nas/zhuang/dataset/data_aishell2/data_aishell2/
+dev_set=/data/nas/zhuang/dataset/data_aishell2/devNtest/IOS/dev/
+tst_set=/data/nas/zhuang/dataset/data_aishell2/devNtest/IOS/test
 
 nj=16
 dict=data/dict/lang_char.txt
 
 train_set=train
-# Optional train_config
-# 1. conf/train_transformer.yaml: Standard transformer
-# 2. conf/train_conformer.yaml: Standard conformer
-# 3. conf/train_unified_conformer.yaml: Unified dynamic chunk causal conformer
-# 4. conf/train_unified_transformer.yaml: Unified dynamic chunk transformer
-train_config=conf/train_unified_transformer.yaml
-dir=exp/transformer
+train_config=/ssd/zhuang/code/wenet/examples/aishell/s0/conf/train_conformer.yaml
+dir=exp/conformer
 checkpoint=
 
 # use average_checkpoint will get better result
 average_checkpoint=true
 decode_checkpoint=$dir/final.pt
-average_num=30
+average_num=10
 decode_modes="ctc_greedy_search ctc_prefix_beam_search attention attention_rescoring"
 
 train_engine=torch_ddp
@@ -57,12 +52,14 @@ deepspeed_save_states="model_only"
 
 . tools/parse_options.sh || exit 1;
 
+
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     # Data preparation
     local/prepare_data.sh ${trn_set} data/local/${train_set} data/${train_set} || exit 1;
     local/prepare_data.sh ${dev_set} data/local/dev data/dev || exit 1;
     local/prepare_data.sh ${tst_set} data/local/test data/test || exit 1;
 fi
+
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     # remove the space between the text labels for Mandarin dataset
@@ -80,6 +77,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
 
 fi
 
+
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     # Make train dict
     echo "Make a dictionary"
@@ -91,6 +89,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
         | sort | uniq | grep -a -v -e '^\s*$' | awk '{print $0 " " NR+2}' >> ${dict}
 fi
 
+
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     # Prepare wenet required data
     echo "Prepare data, prepare required format"
@@ -99,6 +98,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     done
 fi
 
+
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     # Training
     mkdir -p $dir
@@ -106,9 +106,11 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     num_gpus=$(echo $CUDA_VISIBLE_DEVICES | awk -F "," '{print NF}')
     # Use "nccl" if it works, otherwise use "gloo"
     dist_backend="nccl"
-    # train.py will write $train_config to $dir/train.yaml with model input
-    # and output dimension, train.yaml will be used for inference or model
-    # export later
+
+    current_time=$(date "+%Y-%m-%d_%H-%M")
+    log_file="${dir}/train.log.txt.${current_time}"
+    echo "log_file: ${log_file}"
+
     if [ ${train_engine} == "deepspeed" ]; then
       echo "$0: using deepspeed"
     else
@@ -129,8 +131,9 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
               --num_workers 2 \
               --pin_memory \
               --deepspeed_config ${deepspeed_config} \
-              --deepspeed.save_states ${deepspeed_save_states}
+              --deepspeed.save_states ${deepspeed_save_states} &> ${log_file}
 fi
+
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     # Test model, please specify the model you want to test by --checkpoint

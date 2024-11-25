@@ -16,14 +16,15 @@ fi
 export CUDA_VISIBLE_DEVICES="${gpu_list}"
 echo "CUDA_VISIBLE_DEVICES is ${CUDA_VISIBLE_DEVICES}"
 
-stage=5
-stop_stage=5
+stage=0
+stop_stage=3
 
 HOST_NODE_ADDR="localhost:0"
 num_nodes=1
 job_id=2023
 
-data=/data/nas/ASR_Datasets/data_aishell/
+#data=/data/nas/ASR_Datasets/data_aishell/
+data=/data/nas/zhuang/dataset/data_aishell
 
 
 nj=16
@@ -54,8 +55,8 @@ num_workers=8
 prefetch=10
 
 # use average_checkpoint will get better result
-average_checkpoint=false
-average_num=30
+average_checkpoint=true
+average_num=10
 decode_checkpoint=$dir/avg_${average_num}.pt
 decode_modes="ctc_greedy_search ctc_prefix_beam_search attention attention_rescoring"
 
@@ -114,6 +115,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
   done
 fi
 
+
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
   mkdir -p $dir
   num_gpus=$(echo $CUDA_VISIBLE_DEVICES | awk -F "," '{print NF}')
@@ -131,22 +133,6 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "$0: using torch ddp"
   fi
 
-  # NOTE(xcsong): Both ddp & deepspeed can be launched by torchrun
-  # NOTE(xcsong): To unify single-node & multi-node training, we add
-  #               all related args. You should change `nnodes` &
-  #               `rdzv_endpoint` for multi-node, see
-  #               https://pytorch.org/docs/stable/elastic/run.html#usage
-  #               https://github.com/wenet-e2e/wenet/pull/2055#issuecomment-1766055406
-  #               `rdzv_id` - A user-defined id that uniquely identifies the worker group for a job.
-  #                           This id is used by each node to join as a member of a particular worker group.
-  #               `rdzv_endpoint` - The rendezvous backend endpoint; usually in form <host>:<port>.
-  # NOTE(xcsong): In multi-node training, some clusters require special NCCL variables to set prior to training.
-  #               For example: `NCCL_IB_DISABLE=1` + `NCCL_SOCKET_IFNAME=enp` + `NCCL_DEBUG=INFO`
-  #               without NCCL_IB_DISABLE=1
-  #                   RuntimeError: NCCL error in: ../torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1269, internal error, NCCL Version xxx
-  #               without NCCL_SOCKET_IFNAME=enp  (IFNAME could be get by `ifconfig`)
-  #                   RuntimeError: The server socket has failed to listen on any local network address. The server socket has failed to bind to [::]:xxx
-  #               ref: https://github.com/google/jax/issues/13559#issuecomment-1343573764
   echo "$0: num_nodes is $num_nodes, proc_per_node is $num_gpus"
   torchrun --nnodes=$num_nodes --nproc_per_node=$num_gpus \
            --rdzv_id=$job_id --rdzv_backend="c10d" --rdzv_endpoint=$HOST_NODE_ADDR \
@@ -167,25 +153,34 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
       --deepspeed.save_states ${deepspeed_save_states}
 fi
 
+
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
   # Test model, please specify the model you want to test by --checkpoint
   if [ ${average_checkpoint} == true ]; then
     decode_checkpoint=$dir/avg_${average_num}.pt
-    echo "do model average and final checkpoint is $decode_checkpoint"
-    python wenet/bin/average_model.py \
-      --dst_model $decode_checkpoint \
-      --src_path $dir  \
-      --num ${average_num} \
-      --val_best
+    # 如果不存在平均模型，则先进行平均
+    if [ ! -f $decode_checkpoint ]; then
+      echo "do model average and final checkpoint is $decode_checkpoint"
+      python wenet/bin/average_model.py \
+        --dst_model $decode_checkpoint \
+        --src_path $dir  \
+        --num ${average_num} \
+        --val_best
+    fi
+  else
+    echo "do not do model average and final checkpoint is $checkpoint"
+    decode_checkpoint=$dir/$checkpoint
   fi
   # Please specify decoding_chunk_size for unified streaming and
   # non-streaming model. The default value is -1, which is full chunk
   # for non-streaming inference.
-  result_dir="${decode_checkpoint}-inference"
-  mkdir -p $result_dir
   decoding_chunk_size=
   ctc_weight=0.3
-  reverse_weight=0.5
+  reverse_weight=0.0
+
+  result_dir="${decode_checkpoint}-ctc${ctc_weight}-re${reverse_weight}-inference"
+  mkdir -p $result_dir
+
   python wenet/bin/recognize.py --gpu 0 \
     --modes $decode_modes \
     --config $dir/train.yaml \

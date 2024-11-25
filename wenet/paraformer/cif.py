@@ -206,6 +206,74 @@ class Cif(nn.Module):
             predictor_alignments_length.detach()
 
 
+class Predictor(torch.nn.Module):
+
+    def __init__(
+        self,
+        idim,
+        l_order,
+        r_order,
+        threshold=1.0,
+        dropout=0.1,
+        smooth_factor=1.0,
+        noise_threshold=0.0,
+        tail_threshold=0.45,
+        residual=True,
+        cnn_groups=0,
+        smooth_factor2=0.25,
+        noise_threshold2=0.01,
+        upsample_times=3,
+    ):
+        super().__init__()
+        self.predictor = Cif(idim, l_order, r_order, threshold, dropout,
+                             smooth_factor, noise_threshold, tail_threshold,
+                             residual, cnn_groups)
+
+        # accurate timestamp branch
+        self.smooth_factor2 = smooth_factor2
+        self.noise_threshold2 = noise_threshold
+        self.upsample_times = upsample_times
+        self.noise_threshold2 = noise_threshold2
+        self.tp_upsample_cnn = torch.nn.ConvTranspose1d(
+            idim, idim, self.upsample_times, self.upsample_times)
+        self.tp_blstm = torch.nn.LSTM(idim,
+                                      idim,
+                                      1,
+                                      bias=True,
+                                      batch_first=True,
+                                      dropout=0.0,
+                                      bidirectional=True)
+        self.tp_output = torch.nn.Linear(idim * 2, 1)
+
+    def forward(self,
+                hidden,
+                target_label: Optional[torch.Tensor] = None,
+                mask: torch.Tensor = torch.tensor(0),
+                ignore_id: int = -1,
+                mask_chunk_predictor: Optional[torch.Tensor] = None,
+                target_label_length: Optional[torch.Tensor] = None):
+
+        acoustic_embeds, token_num, alphas, cif_peak = self.predictor(
+            hidden, target_label, mask, ignore_id, mask_chunk_predictor,
+            target_label_length)
+
+        output, (_, _) = self.tp_blstm(
+            self.tp_upsample_cnn(hidden.transpose(1, 2)).transpose(1, 2))
+        tp_alphas = torch.sigmoid(self.tp_output(output))
+        tp_alphas = torch.nn.functional.relu(tp_alphas * self.smooth_factor2 -
+                                             self.noise_threshold2)
+
+        mask = mask.repeat(1, self.upsample_times,
+                           1).transpose(-1,
+                                        -2).reshape(tp_alphas.shape[0], -1)
+        mask = mask.unsqueeze(-1)
+        tp_alphas = tp_alphas * mask
+        tp_alphas = tp_alphas.squeeze(-1)
+        tp_token_num = tp_alphas.sum(-1)
+
+        return acoustic_embeds, token_num, alphas, cif_peak, tp_alphas, \
+            tp_token_num, mask
+
 class MAELoss(nn.Module):
 
     def __init__(self, normalize_length=False):

@@ -16,6 +16,7 @@
 from typing import Dict, List, Optional, Tuple
 
 import torch
+import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 
 from wenet.transformer.ctc import CTC
@@ -30,49 +31,123 @@ from wenet.utils.mask import make_pad_mask
 from wenet.utils.common import (IGNORE_ID, add_sos_eos, th_accuracy,
                                 reverse_pad_list)
 from wenet.utils.context_graph import ContextGraph
+from wenet.transformer.cmvn import GlobalCMVN
+from wenet.utils.cmvn import load_cmvn
+from wenet.utils.class_module import WENET_ENCODER_CLASSES, WENET_DECODER_CLASSES, WENET_CTC_CLASSES
 
+
+# class ASRModel(torch.nn.Module):
+#     """CTC-attention hybrid Encoder-Decoder model"""
+#
+#     def __init__(
+#         self,
+#         vocab_size: int,
+#         encoder: BaseEncoder,
+#         decoder: TransformerDecoder,
+#         ctc: CTC,
+#         ctc_weight: float = 0.5,
+#         ignore_id: int = IGNORE_ID,
+#         reverse_weight: float = 0.0,
+#         lsm_weight: float = 0.0,
+#         length_normalized_loss: bool = False,
+#         special_tokens: Optional[dict] = None,
+#         apply_non_blank_embedding: bool = False,
+#     ):
+#         assert 0.0 <= ctc_weight <= 1.0, ctc_weight
+#
+#         super().__init__()
+#         # note that eos is the same as sos (equivalent ID)
+#         self.sos = (vocab_size - 1 if special_tokens is None else
+#                     special_tokens.get("<sos>", vocab_size - 1))
+#         self.eos = (vocab_size - 1 if special_tokens is None else
+#                     special_tokens.get("<eos>", vocab_size - 1))
+#         self.vocab_size = vocab_size
+#         self.special_tokens = special_tokens
+#         self.ignore_id = ignore_id
+#         self.ctc_weight = ctc_weight
+#         self.reverse_weight = reverse_weight
+#         self.apply_non_blank_embedding = apply_non_blank_embedding
+#
+#         self.encoder = encoder
+#         self.decoder = decoder
+#         self.ctc = ctc
+#         self.criterion_att = LabelSmoothingLoss(
+#             size=vocab_size,
+#             padding_idx=ignore_id,
+#             smoothing=lsm_weight,
+#             normalize_length=length_normalized_loss,
+#         )
 
 class ASRModel(torch.nn.Module):
     """CTC-attention hybrid Encoder-Decoder model"""
 
     def __init__(
-        self,
-        vocab_size: int,
-        encoder: BaseEncoder,
-        decoder: TransformerDecoder,
-        ctc: CTC,
-        ctc_weight: float = 0.5,
-        ignore_id: int = IGNORE_ID,
-        reverse_weight: float = 0.0,
-        lsm_weight: float = 0.0,
-        length_normalized_loss: bool = False,
-        special_tokens: Optional[dict] = None,
-        apply_non_blank_embedding: bool = False,
+            self,
+            input_dim: int,
+            output_dim: int,
+            encoder: BaseEncoder,
+            encoder_conf: dict,
+            decoder: TransformerDecoder,
+            decoder_conf: dict,
+            ctc: CTC,
+            ctc_conf: dict,
+            cmvn: Optional[str] = None,
+            cmvn_conf: Optional[dict] = None,
+            **kwargs: dict,
     ):
-        assert 0.0 <= ctc_weight <= 1.0, ctc_weight
 
         super().__init__()
+
+        vocab_size = output_dim
+        special_tokens = kwargs['tokenizer_conf'].get('special_tokens', None)
+
+        # TODO(xcsong): Forcefully read the 'cmvn' attribute.
+        if cmvn == 'global_cmvn':
+            mean, istd = load_cmvn(cmvn_conf['cmvn_file'], cmvn_conf['is_json_cmvn'])
+            global_cmvn = GlobalCMVN(torch.from_numpy(mean).float(), torch.from_numpy(istd).float())
+        else:
+            global_cmvn = None
+
+
+        encoder = WENET_ENCODER_CLASSES[encoder](
+            input_dim,
+            global_cmvn=global_cmvn,
+            **encoder_conf,
+            **encoder_conf['efficient_conf'] if 'efficient_conf' in encoder_conf else {})
+
+        decoder = WENET_DECODER_CLASSES[decoder](vocab_size, encoder.output_size(), **decoder_conf)
+
+        ctc = WENET_CTC_CLASSES[ctc](vocab_size, encoder.output_size(), blank_id=ctc_conf['ctc_blank_id'])
+
+        self.ctc_weight = kwargs.get('ctc_conf', {}).get('ctc_weight', 0.5)
+        self.ignore_id = kwargs['model_conf'].get('ignore_id', IGNORE_ID)
+        self.blank_id = kwargs.get('ctc_conf', {}).get('ctc_blank_id', 0)
+        self.reverse_weight = kwargs['model_conf'].get('reverse_weight', 0.0)
+        self.special_tokens = special_tokens
+        self.apply_non_blank_embedding = kwargs['model_conf'].get('apply_non_blank_embedding', False)
+        self.lsm_weight = kwargs['model_conf'].get('lsm_weight', 0.0)
+        self.length_normalized_loss = kwargs['model_conf'].get('length_normalized_loss', False)
+
         # note that eos is the same as sos (equivalent ID)
+        special_tokens = self.special_tokens
         self.sos = (vocab_size - 1 if special_tokens is None else
                     special_tokens.get("<sos>", vocab_size - 1))
         self.eos = (vocab_size - 1 if special_tokens is None else
                     special_tokens.get("<eos>", vocab_size - 1))
         self.vocab_size = vocab_size
-        self.special_tokens = special_tokens
-        self.ignore_id = ignore_id
-        self.ctc_weight = ctc_weight
-        self.reverse_weight = reverse_weight
-        self.apply_non_blank_embedding = apply_non_blank_embedding
 
         self.encoder = encoder
         self.decoder = decoder
-        self.ctc = ctc
+        if self.ctc_weight != 0.0:
+            self.ctc = ctc
+        else:
+            self.ctc = None
         self.criterion_att = LabelSmoothingLoss(
             size=vocab_size,
-            padding_idx=ignore_id,
-            smoothing=lsm_weight,
-            normalize_length=length_normalized_loss,
-        )
+            padding_idx=self.ignore_id,
+            smoothing=self.lsm_weight,
+            normalize_length=self.length_normalized_loss,
+            )
 
 
     @torch.jit.unused
@@ -106,14 +181,10 @@ class ASRModel(torch.nn.Module):
         if self.apply_non_blank_embedding:
             assert self.ctc_weight != 0
             assert ctc_probs is not None
-            encoder_out, encoder_mask = self.filter_blank_embedding(
-                ctc_probs, encoder_out)
+            encoder_out, encoder_mask = self.filter_blank_embedding(ctc_probs, encoder_out)
         if self.ctc_weight != 1.0:
             loss_att, acc_att = self._calc_att_loss(
-                encoder_out, encoder_mask, text, text_lengths, {
-                    "langs": batch["langs"],
-                    "tasks": batch["tasks"]
-                })
+                encoder_out, encoder_mask, text, text_lengths, {"langs": batch["langs"], "tasks": batch["tasks"]})
         else:
             loss_att = None
             acc_att = None
@@ -186,8 +257,7 @@ class ASRModel(torch.nn.Module):
 
         # reverse the seq, used for right to left decoder
         r_ys_pad = reverse_pad_list(ys_pad, ys_pad_lens, float(self.ignore_id))
-        r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos,
-                                                self.ignore_id)
+        r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos, self.ignore_id)
         # 1. Forward decoder
         decoder_out, r_decoder_out, _ = self.decoder(encoder_out, encoder_mask,
                                                      ys_in_pad, ys_in_lens,

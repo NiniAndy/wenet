@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import logging
 import os
 import re
-
-import yaml
-import torch
 from collections import OrderedDict
 
-import datetime
+import torch
+import yaml
 
 
 def load_checkpoint(model: torch.nn.Module, path: str) -> dict:
@@ -45,8 +44,7 @@ def load_checkpoint(model: torch.nn.Module, path: str) -> dict:
 
 def save_state_dict_and_infos(state_dict, path: str, infos=None):
     rank = int(os.environ.get('RANK', 0))
-    logging.info('[Rank {}] Checkpoint: save to checkpoint {}'.format(
-        rank, path))
+    logging.info('[Rank {}] Checkpoint: save to checkpoint {}'.format(rank, path))
     torch.save(state_dict, path)
     info_path = re.sub('.pt$', '.yaml', path)
     if infos is None:

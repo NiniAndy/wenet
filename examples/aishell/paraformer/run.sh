@@ -31,10 +31,10 @@ job_id=2024
 #data_type=shard
 data_type=raw
 
-train_set=train
-
-train_config=conf/train_paraformer.yaml
-dir=exp/paraformer
+#train_config=conf/train_paraformer.yaml
+#dir=exp/paraformer
+train_config=conf/train_paraformer_V2.yaml
+dir=exp/paraformerV2
 tensorboard_dir=tensorboard
 num_workers=8
 prefetch=500
@@ -66,9 +66,6 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
   log_file="${dir}/train.log.txt.${current_time}"
   echo "log_file: ${log_file}"
 
-  # train.py rewrite $train_config to $dir/train.yaml with model input
-  # and output dimension, and $dir/train.yaml will be used for inference
-  # and export.
   if [ ${train_engine} == "deepspeed" ]; then
     echo "$0: using deepspeed"
   else
@@ -100,26 +97,34 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   # Test model, please specify the model you want to test by --checkpoint
   if [ ${average_checkpoint} == true ]; then
     decode_checkpoint=$dir/avg_${average_num}.pt
-    echo "do model average and final checkpoint is $decode_checkpoint"
-    python wenet/bin/average_model.py \
-      --dst_model $decode_checkpoint \
-      --src_path $dir  \
-      --num ${average_num} \
-      --val_best
+    # 如果不存在平均模型，则先进行平均
+    if [ ! -f $decode_checkpoint ]; then
+      echo "do model average and final checkpoint is $decode_checkpoint"
+      python wenet/bin/average_model.py \
+        --dst_model $decode_checkpoint \
+        --src_path $dir  \
+        --num ${average_num} \
+        --val_best
+    fi
+  else
+    echo "do not do model average and final checkpoint is $checkpoint"
+    decode_checkpoint=$dir/$checkpoint
   fi
   # Please specify decoding_chunk_size for unified streaming and
   # non-streaming model. The default value is -1, which is full chunk
   # for non-streaming inference.
-  result_dir="${decode_checkpoint}-inference"
-  mkdir -p $result_dir
   decoding_chunk_size=
   ctc_weight=0.3
-  reverse_weight=0.5
+  reverse_weight=0.0
+
+  result_dir="${decode_checkpoint}-ctc${ctc_weight}-re${reverse_weight}-inference"
+  mkdir -p $result_dir
+
   python wenet/bin/recognize.py --gpu 0 \
     --modes $decode_modes \
     --config $dir/train.yaml \
     --data_type $data_type \
-    --test_data data/test/data.list \
+    --test_data /ssd/zhuang/code/wenet/examples/aishell/s0/data/test/data.list \
     --checkpoint $decode_checkpoint \
     --beam_size 10 \
     --batch_size 32 \
@@ -130,16 +135,16 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     ${decoding_chunk_size:+--decoding_chunk_size $decoding_chunk_size}
   for mode in ${decode_modes}; do
     python tools/compute-wer.py --char=1 --v=1 \
-      data/test/text $result_dir/$mode/text > $result_dir/$mode/wer
+      /ssd/zhuang/code/wenet/examples/aishell/s0/data/test/text $result_dir/$mode/text > $result_dir/$mode/wer
   done
 fi
 
 
-if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
-  # Export the best model you want
-  python wenet/bin/export_jit.py \
-    --config $dir/train.yaml \
-    --checkpoint $dir/avg_${average_num}.pt \
-    --output_file $dir/final.zip \
-    --output_quant_file $dir/final_quant.zip
-fi
+#if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
+#  # Export the best model you want
+#  python wenet/bin/export_jit.py \
+#    --config $dir/train.yaml \
+#    --checkpoint $dir/avg_${average_num}.pt \
+#    --output_file $dir/final.zip \
+#    --output_quant_file $dir/final_quant.zip
+#fi

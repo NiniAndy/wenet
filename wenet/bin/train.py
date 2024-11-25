@@ -20,6 +20,7 @@ import logging
 import os
 import torch
 import yaml
+import time
 
 import torch.distributed as dist
 
@@ -37,7 +38,7 @@ from wenet.utils.train_utils import (
     init_dataset_and_dataloader, check_modify_and_save_config,
     init_optimizer_and_scheduler, init_scaler, trace_and_print_model,
     wrap_cuda_model, init_summarywriter, save_model, log_per_epoch,
-    add_lora_args, reinit_lora)
+    add_lora_args, reinit_lora, monitor_save)
 
 
 def get_args():
@@ -117,6 +118,11 @@ def main():
     # Get optimizer & scheduler
     model, optimizer, scheduler = init_optimizer_and_scheduler(args, configs, model)
 
+    monitor = configs.get('monitor', "loss")
+    save_n = configs.get('save_n', 10)
+    monitor_list = []
+    model_list = []
+
     # Save checkpoints
     save_model(model,
                info_dict={
@@ -142,6 +148,7 @@ def main():
     configs.pop("init_infos", None)
     final_epoch = None
     for epoch in range(start_epoch, end_epoch):
+        time1 = time.perf_counter()
         configs['epoch'] = epoch
 
         lrs = [group['lr'] for group in optimizer.param_groups]
@@ -161,6 +168,19 @@ def main():
 
         # NOTE(xcsong): Ensure all ranks start CV at the same time.
         loss_dict = executor.cv(model, cv_data_loader, configs)
+
+        monitor_dict, monitor_list, model_list, del_model = monitor_save(loss_dict, monitor_list, model_list, monitor , save_n)
+
+        if monitor_dict["best"] == True:
+            if "best_acc" in monitor_dict:
+                best = monitor_dict["best_acc"]
+            elif "best_loss" in monitor_dict:
+                best = monitor_dict["best_loss"]
+            else:
+                raise ValueError("best info is mistake")
+            if local_rank == 0:
+                logging.info(f"[Rank {local_rank}], epoch: {epoch} is the best model {monitor} {best}")
+
         info_dict = {
             'epoch': epoch,
             'lrs': [group['lr'] for group in optimizer.param_groups],
@@ -170,9 +190,29 @@ def main():
             'loss_dict': loss_dict,
             **configs
         }
+
         # epoch cv: tensorboard && log
         log_per_epoch(writer, info_dict=info_dict)
-        save_model(model, info_dict=info_dict)
+
+        time2 = time.perf_counter()
+        time_escaped = (time2 - time1) / 3600.0
+        if local_rank == 0:
+            logging.info(
+                f"[Rank {local_rank}], "
+                f"time_escaped_epoch: {time_escaped:.3f} hours, "
+                f"estimated to finish {end_epoch} "
+                f"epoch: {(end_epoch - epoch) * time_escaped:.3f} hours"
+            )
+
+        # Save checkpoints
+        if monitor_dict["save_flag"] == True:
+            save_model_path = save_model(model, info_dict=info_dict)
+            if del_model is not None:
+                if local_rank == 0:
+                    logging.info(f"{del_model} is deleted")
+            model_list.append(save_model_path)
+
+        print ("\n")
 
         final_epoch = epoch
 

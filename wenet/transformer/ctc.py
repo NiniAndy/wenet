@@ -14,8 +14,9 @@
 # Modified from ESPnet(https://github.com/espnet/espnet)
 
 from typing import Tuple
-
+import numpy as np
 import torch
+import torchaudio
 import torch.nn.functional as F
 
 
@@ -89,3 +90,81 @@ class CTC(torch.nn.Module):
             torch.Tensor: argmax applied 2d tensor (B, Tmax)
         """
         return torch.argmax(self.ctc_lo(hs_pad), dim=2)
+
+
+    def ctc_logprobs(self, hs_pad, blank_id=0, blank_penalty: float = 0.0,):
+        """log softmax of frame activations
+
+        Args:
+            torch.Tensor hs_pad: 3d tensor (B, Tmax, eprojs)
+        Returns:
+            torch.Tensor: log softmax applied 3d tensor (B, Tmax, odim)
+        """
+        if blank_penalty > 0.0:
+            logits = self.ctc_lo(hs_pad)
+            logits[:, :, blank_id] -= blank_penalty
+            ctc_probs = logits.log_softmax(dim=2)
+        else:
+            ctc_probs = self.log_softmax(hs_pad)
+        return ctc_probs
+
+    def insert_blank(self, label, blank_id=0):
+        """Insert blank token between every two label token."""
+        label = np.expand_dims(label, 1)
+        blanks = np.zeros((label.shape[0], 1), dtype=np.int64) + blank_id
+        label = np.concatenate([blanks, label], axis=1)
+        label = label.reshape(-1)
+        label = np.append(label, label[0])
+        return label
+
+    def force_align(self, ctc_probs: torch.Tensor, y: torch.Tensor, blank_id=0) -> list:
+        """ctc forced alignment.
+
+        Args:
+            torch.Tensor ctc_probs: hidden state sequence, 2d tensor (T, D)
+            torch.Tensor y: id sequence tensor 1d tensor (L)
+            int blank_id: blank symbol index
+        Returns:
+            torch.Tensor: alignment result
+        """
+        ctc_probs = ctc_probs[None].cpu()
+        y = y[None].cpu()
+        alignments, _ = torchaudio.functional.forced_align(ctc_probs, y, blank=blank_id)
+        return alignments[0]
+
+    def remove_duplicates_and_blank(self, alignment, blank_id=0):
+        """
+        去除对齐路径中的空白标签和重复标签。
+
+        alignment: 对齐路径，可能包含空白标签和重复标签。
+        blank_id: 空白标签的 ID。
+
+        返回：
+        filtered_alignment: 去除空白和重复标签后的对齐路径。
+        """
+        filtered_alignment = []
+        prev_token = None
+        for token in alignment:
+            if token != blank_id and token != prev_token:
+                filtered_alignment.append(token)
+            prev_token = token
+        return filtered_alignment
+
+    def remove_duplicates(self, alignment):
+        """
+        去除对齐路径中的空白标签和重复标签。
+
+        alignment: 对齐路径，可能包含空白标签和重复标签。
+        blank_id: 空白标签的 ID。
+
+        返回：
+        filtered_alignment: 去除空白和重复标签后的对齐路径。
+        """
+        filtered_alignment = []
+        prev_token = None
+        for token in alignment:
+            if  token != prev_token:
+                filtered_alignment.append(token)
+            prev_token = token
+        return filtered_alignment
+

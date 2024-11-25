@@ -21,11 +21,9 @@ from contextlib import nullcontext
 # if your python version < 3.7 use the below one
 # from contextlib import suppress as nullcontext
 import torch
-from wenet.utils.common import StepTimer
 
-from wenet.utils.train_utils import (wenet_join, batch_forward, batch_backward,
-                                     update_parameter_and_lr, log_per_step,
-                                     save_model)
+from wenet.utils.common import StepTimer
+from wenet.utils.train_utils import (wenet_join, batch_forward, batch_backward, update_parameter_and_lr, log_per_step, save_model)
 
 
 class Executor:
@@ -111,8 +109,7 @@ class Executor:
                 self.step += 1 if (batch_idx + 1) % info_dict["accum_grad"] == 0 else 0
 
     def cv(self, model, cv_data_loader, configs):
-        ''' Cross validation on
-        '''
+        ''' Cross validation on '''
         if self.cv_step_timer is None:
             self.cv_step_timer = StepTimer(0.0)
         else:
@@ -131,23 +128,17 @@ class Executor:
                 if num_utts == 0:
                     continue
 
-                info_dict = batch_forward(model, batch_dict, None, info_dict,
-                                          self.device)
+                info_dict = batch_forward(model, batch_dict, None, info_dict, self.device)
                 _dict = info_dict["loss_dict"]
 
                 num_seen_utts += num_utts
-                total_acc.append(_dict['th_accuracy'].item(
-                ) if _dict.get('th_accuracy', None) is not None else 0.0)
+                total_acc.append(_dict['th_accuracy'].item() if _dict.get('th_accuracy', None) is not None else 0.0)
                 for loss_name, loss_value in _dict.items():
-                    if loss_value is not None and "loss" in loss_name \
-                            and torch.isfinite(loss_value):
+                    if loss_value is not None and "loss" in loss_name and torch.isfinite(loss_value):
                         loss_value = loss_value.item()
-                        loss_dict[loss_name] = loss_dict.get(loss_name, 0) + \
-                            loss_value * num_utts
+                        loss_dict[loss_name] = loss_dict.get(loss_name, 0) + loss_value * num_utts
                 # write cv: log
-                log_per_step(writer=None,
-                             info_dict=info_dict,
-                             timer=self.cv_step_timer)
+                log_per_step(writer=None, info_dict=info_dict, timer=self.cv_step_timer)
         for loss_name, loss_value in loss_dict.items():
             loss_dict[loss_name] = loss_dict[loss_name] / num_seen_utts
         loss_dict["acc"] = sum(total_acc) / len(total_acc)
