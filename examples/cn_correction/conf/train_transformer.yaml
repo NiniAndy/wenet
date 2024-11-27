@@ -1,0 +1,101 @@
+# network architecture
+model: text_bert
+model_conf:
+    ctc_weight: 0.3
+    lsm_weight: 0.1     # label smoothing option
+    length_normalized_loss: false
+
+# encoder
+encoder: TextBertEncoder
+encoder_conf:
+    output_size: 256    # dimension of attention
+    attention_heads: 4
+    linear_units: 2048  # the number of units of position-wise feed forward
+    num_blocks: 4      # the number of encoder blocks
+    dropout_rate: 0.1
+    positional_dropout_rate: 0.1
+    attention_dropout_rate: 0.0
+    normalize_before: true
+
+encoder: transformer
+encoder_conf:
+    output_size: 256    # dimension of attention
+    attention_heads: 4
+    linear_units: 2048  # the number of units of position-wise feed forward
+    num_blocks: 4      # the number of encoder blocks
+    dropout_rate: 0.1
+    positional_dropout_rate: 0.1
+    attention_dropout_rate: 0.0
+    input_layer: conv2d # encoder architecture type
+    normalize_before: true
+
+# decoder related
+decoder: transformer
+decoder_conf:
+    attention_heads: 4
+    linear_units: 2048
+    num_blocks: 6
+    dropout_rate: 0.1
+    positional_dropout_rate: 0.1
+    self_attention_dropout_rate: 0.0
+    src_attention_dropout_rate: 0.0
+
+
+train_conf:
+  accum_grad: 1
+  grad_clip: 5
+  max_epoch: 150
+  keep_nbest_models: 10
+  log_interval: 50
+
+optim: adam
+optim_conf:
+   lr: 0.0005
+scheduler: warmuplr
+scheduler_conf:
+   warmup_steps: 30000
+
+
+tokenizer: CharTokenizer
+tokenizer_conf:
+  unk_symbol: <unk>
+  token_list: "/ssd/zhuang/code/FunASR/examples/aishell/DATA/data/zh_token_list/char/tokens.txt"
+
+tokenizer: char
+tokenizer_conf:
+  symbol_table_path: '/ssd/zhuang/code/wenet/examples/cn_correction/data/dict/han_dict_funasr_style.txt'
+  split_with_space: false
+  bpe_path: null
+  non_lang_syms_path: null
+  is_multilingual: false
+  num_languages: 1
+  special_tokens:
+    <blank>: 0
+    <unk>: 4233
+    <sos>: 1
+    <eos>: 2
+
+confusion: True
+confusion_conf:
+  max_mask_prob: 0.6
+  mask_lv1_prob: 0.0  # 同音字
+  mask_lv2_prob: 0.3  # 更换拼音音调
+  mask_lv3_prob: 0.1  # # 前后鼻音, 平舌音和卷舌音
+  mask_lv4_prob: 0.3  # # 拼音编辑距离为1，这里包含一部分 level3、2 无法生成有效拼音的情况
+  mask_lv5_prob: 0.3  # 修改辅音or元音
+  pinyin_set_path: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/pinyin/pinyin_set.json"
+  initials_distence_path: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/pinyin/initials_distance.json"
+  vowel_distence_path: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/pinyin/vowel_distance.json"
+  threshold: 0.5
+
+pny_tokenizer: CharTokenizer
+pny_tokenizer_conf:
+  unk_symbol: <unk>
+  token_list: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/pinyin/tokens.txt"
+
+ctc_conf:
+    dropout_rate: 0.0
+    ctc_type: builtin
+    reduce: true
+    ignore_nan_grad: true
+normalize: null

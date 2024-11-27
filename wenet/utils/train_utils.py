@@ -271,7 +271,7 @@ def init_distributed(args):
     return world_size, local_rank, rank
 
 
-def check_modify_and_save_config(args, configs, symbol_table):
+def check_modify_and_save_config(args, configs, tokenizer):
     if args.train_engine in ["torch_ddp", "torch_fsdp"]:
         if args.use_amp:
             configs["dtype"] = "fp16"
@@ -335,8 +335,8 @@ def check_modify_and_save_config(args, configs, symbol_table):
             input_dim = configs['dataset_conf']['mfcc_conf']['num_mel_bins']
     configs['input_dim'] = input_dim
 
-    configs, _ = get_blank_id(configs, symbol_table)
-    configs['output_dim'] = configs['vocab_size']
+    configs, _ = get_blank_id(configs, tokenizer.symbol_table)
+    configs['output_dim'] = configs.get('vocab_size', tokenizer.vocab_size())
 
     configs['train_engine'] = args.train_engine
     configs['use_amp'] = args.use_amp
@@ -679,16 +679,10 @@ def batch_forward(model, batch, scaler, info_dict, device):
     if "npu" in device.__str__() and TORCH_NPU_AVAILABLE:
         amp_autocast = torch.npu.amp.autocast
     autocast = {
-        "deepspeed":
-        amp_autocast(enabled=dtype is not None,
-                     dtype=dtype,
-                     cache_enabled=False),
-        "torch":
-        amp_autocast(enabled=scaler is not None),
-        "torch_ddp":
-        amp_autocast(enabled=scaler is not None),
-        "torch_fsdp":
-        amp_autocast(enabled=True, dtype=dtype)
+        "deepspeed":amp_autocast(enabled=dtype is not None, dtype=dtype, cache_enabled=False),
+        "torch": amp_autocast(enabled=scaler is not None),
+        "torch_ddp": amp_autocast(enabled=scaler is not None),
+        "torch_fsdp": amp_autocast(enabled=True, dtype=dtype)
         if dtype is not None else nullcontext()
     }[train_engine]
     with autocast:
@@ -937,15 +931,18 @@ def monitor_save(loss_dict, monitor_list, model_list, monitor="loss", save_n=10)
         else:
             if monitor_index > min(monitor_list):
                 del_id  = monitor_list.index(min(monitor_list))
-                del_model_path = model_list[del_id]
+                # del_model_path =  model_list[del_id]
+                del_model_path = os.path.join( os.getcwd(), model_list[del_id])
+                print (f"delete model: {del_model_path}")
                 os.remove(del_model_path)
                 del_model_yaml = del_model_path.replace(".pt", ".yaml")
                 os.remove(del_model_yaml)
-                model_list.remove(del_model_path)
+
+                model_list.remove(model_list[del_id])
                 monitor_list.remove(min(monitor_list))
                 monitor_list.append(monitor_index)
                 monitor_dict["save_flag"] = True
-            if monitor_index >= max(monitor_list):
+            if monitor_index > max(monitor_list):
                 monitor_dict["best_acc"] = monitor_index
                 monitor_dict["best"] = True
 
@@ -965,21 +962,24 @@ def monitor_save(loss_dict, monitor_list, model_list, monitor="loss", save_n=10)
         else:
             if monitor_index < max(monitor_list):
                 del_id = monitor_list.index(max(monitor_list))
-                del_model_path = model_list[del_id]
+                # del_model_path = model_list[del_id]
+                del_model_path = os.path.join( os.getcwd(), model_list[del_id])
+                print(f"delete model: {del_model_path}")
                 os.remove(del_model_path)
                 del_model_yaml = del_model_path.replace(".pt", ".yaml")
                 os.remove(del_model_yaml)
-                model_list.remove(del_model_path)
+
+                model_list.remove(model_list[del_id])
                 monitor_list.remove(max(monitor_list))
                 monitor_list.append(monitor_index)
                 monitor_dict["save_flag"] = True
-            if monitor_index <= min(monitor_list):
+            if monitor_index < min(monitor_list):
                 monitor_dict["best_loss"] = monitor_index
                 monitor_dict["best"] = True
 
     else:
         raise ValueError(f"monitor: {monitor} not supported")
 
-    return monitor_dict, monitor_list, model_list, del_model_path
+    return monitor_dict, monitor_list, model_list
 
 

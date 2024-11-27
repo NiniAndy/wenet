@@ -124,12 +124,12 @@ def get_blank_id(configs, symbol_table):
 
     if '<blank>' in symbol_table:
         if 'ctc_blank_id' in configs['ctc_conf']:
-            assert configs['ctc_conf']['ctc_blank_id'] == symbol_table[
-                '<blank>']
+            assert configs['ctc_conf']['ctc_blank_id'] == symbol_table['<blank>']
+
         else:
             configs['ctc_conf']['ctc_blank_id'] = symbol_table['<blank>']
     else:
-        assert 'ctc_blank_id' in configs[
-            'ctc_conf'], "PLZ set ctc_blank_id in yaml"
+        assert 'ctc_blank_id' in configs['ctc_conf'], "PLZ set ctc_blank_id in yaml"
+
 
     return configs, configs['ctc_conf']['ctc_blank_id']

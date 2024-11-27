@@ -537,29 +537,19 @@ def padding(data):
     """
     sample = data
     assert isinstance(sample, list)
-    feats_length = torch.tensor([x['feat'].size(0) for x in sample],
-                                dtype=torch.int32)
+    feats_length = torch.tensor([x['feat'].size(0) for x in sample],dtype=torch.int32)
     order = torch.argsort(feats_length, descending=True)
-    feats_lengths = torch.tensor([sample[i]['feat'].size(0) for i in order],
-                                 dtype=torch.int32)
+    feats_lengths = torch.tensor([sample[i]['feat'].size(0) for i in order],dtype=torch.int32)
     sorted_feats = [sample[i]['feat'] for i in order]
     sorted_keys = [sample[i]['key'] for i in order]
-    sorted_labels = [
-        torch.tensor(sample[i]['label'], dtype=torch.int64) for i in order
-    ]
+    sorted_labels = [torch.tensor(sample[i]['label'], dtype=torch.int64) for i in order]
     sorted_wavs = [sample[i]['wav'].squeeze(0) for i in order]
     langs = [sample[i]['lang'] for i in order]
     tasks = [sample[i]['task'] for i in order]
-    label_lengths = torch.tensor([x.size(0) for x in sorted_labels],
-                                 dtype=torch.int32)
-    wav_lengths = torch.tensor([x.size(0) for x in sorted_wavs],
-                               dtype=torch.int32)
-    padded_feats = pad_sequence(sorted_feats,
-                                batch_first=True,
-                                padding_value=0)
-    padding_labels = pad_sequence(sorted_labels,
-                                  batch_first=True,
-                                  padding_value=-1)
+    label_lengths = torch.tensor([x.size(0) for x in sorted_labels],dtype=torch.int32)
+    wav_lengths = torch.tensor([x.size(0) for x in sorted_wavs],dtype=torch.int32)
+    padded_feats = pad_sequence(sorted_feats, batch_first=True, padding_value=0)
+    padding_labels = pad_sequence(sorted_labels, batch_first=True, padding_value=-1)
     padded_wavs = pad_sequence(sorted_wavs, batch_first=True, padding_value=0)
 
     batch = {

@@ -122,7 +122,7 @@ class ParaformerV2(ASRModel):
                 ctc_prob = ctc_probs[b][: encoder_out_lens[b]].cpu() # [T, N]
                 text_b = ys_pad[b][: ys_pad_lens[b]].cpu() # [1, U]
                 text_audio_alignment = self.ctc.force_align(ctc_prob, text_b)
-                text_audio_alignment = text_audio_alignment.clone().detach().requires_grad_(True)
+                # text_audio_alignment =
                 audio_text = self.ctc.remove_duplicates_and_blank(text_audio_alignment, self.blank_id)
                 if len(audio_text) != ys_pad_lens[b]:
                     print (f"ctc alignment error: {audio_text}, {text_b}")

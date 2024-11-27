@@ -23,14 +23,37 @@ from contextlib import nullcontext
 import torch
 
 from wenet.utils.common import StepTimer
-from wenet.utils.train_utils import (wenet_join, batch_forward, batch_backward, update_parameter_and_lr, log_per_step, save_model)
+from wenet.utils.train_utils import (wenet_join,
+                                     batch_forward,
+                                     batch_backward,
+                                     update_parameter_and_lr,
+                                     log_per_step,
+                                     save_checkpoint)
+import os
+from deepspeed.utils.zero_to_fp32 import convert_zero_checkpoint_to_fp32_state_dict
+from wenet.utils.fsdp_utils import fsdp_save_model
+import yaml
 
 
 class Executor:
 
     def __init__(self,
                  global_step: int = 0,
-                 device: torch.device = torch.device("cpu")):
+                 device: torch.device = torch.device("cpu"),
+                 monitor = "loss",
+                 save_n =  10,
+    ):
+        self.monitor = monitor
+        self.save_n = save_n
+        if monitor == "acc":
+            self.best = 0.0
+        elif monitor == "loss":
+            self.best = float("inf")
+        else:
+            raise ValueError(f"monitor: {monitor} not supported")
+        self.monitor_list = []
+        self.model_list = []
+
         self.step = global_step + 1
         self.train_step_timer = None
         self.cv_step_timer = None
@@ -60,8 +83,6 @@ class Executor:
                 info_dict["batch_idx"] = batch_idx
                 if group_join is not None and wenet_join(group_join, info_dict):
                     break
-                # if wenet_join(group_join, info_dict):
-                #     break
 
                 if batch_dict["target_lengths"].size(0) == 0:
                     continue
@@ -101,7 +122,7 @@ class Executor:
                         "lrs":
                         [group['lr'] for group in optimizer.param_groups]
                     })
-                    save_model(model, info_dict)
+                    self.save_model(model, info_dict)
                     # write final cv: tensorboard
                     log_per_step(writer, info_dict)
                     # Ensure all ranks start Train at the same time in step mode
@@ -143,3 +164,79 @@ class Executor:
             loss_dict[loss_name] = loss_dict[loss_name] / num_seen_utts
         loss_dict["acc"] = sum(total_acc) / len(total_acc)
         return loss_dict
+
+
+    def save_model(self, model, info_dict):
+        rank = int(os.environ.get('RANK', 0))
+        tag = info_dict["tag"]
+        model_dir = info_dict["model_dir"]
+        save_model_path = os.path.join(model_dir, '{}.pt'.format(tag))
+        # save ckpt
+        if info_dict["train_engine"] == "deepspeed":
+            # NOTE(xcsong): All ranks should call this API, but only rank 0 save the general model params. see:
+            # https://github.com/microsoft/DeepSpeed/issues/2993
+            with torch.no_grad():
+                model.save_checkpoint(save_dir=model_dir, tag=tag, client_state=info_dict)
+                if info_dict["save_states"] == "model_only" and rank == 0:
+                    convert_zero_checkpoint_to_fp32_state_dict(model_dir, save_model_path, tag=tag)
+                    os.system("rm -rf {}/{}".format(model_dir, tag))
+
+        elif info_dict['train_engine'] == "torch_fsdp":
+            fsdp_save_model(model, save_model_path, info_dict)
+
+        elif rank == 0:
+            save_checkpoint(model, save_model_path, info_dict)
+
+        # save yaml
+        if rank == 0:
+            with open("{}/{}.yaml".format(model_dir, tag), 'w') as fout:
+                data = yaml.dump(info_dict)
+                fout.write(data)
+
+        if rank == 0:
+            loss_dict = info_dict.get("loss_dict", None)
+            # 初始化时没有loss_dict
+            if loss_dict is None:
+                if self.monitor == "acc":
+                    self.monitor_list.append(0.0)
+                elif self.monitor == "loss":
+                    self.monitor_list.append(float("inf"))
+                else:
+                    raise ValueError(f"monitor: {self.monitor} not supported")
+                self.model_list.append(save_model_path)
+
+            # 如果有loss_dict时先将monitor_index加入monitor_list然后排序，将最差的删除
+            else:
+                monitor_index = loss_dict[self.monitor]
+                self.monitor_list.append(monitor_index)
+                self.model_list.append(save_model_path)
+
+                if self.monitor == "acc":
+                    sorted_indices = sorted(range(len(self.monitor_list)), key=lambda k: self.monitor_list[k], reverse=True) # 从大到小排序
+                elif self.monitor == "loss":
+                    sorted_indices = sorted(range(len(self.monitor_list)), key=lambda k: self.monitor_list[k])  # 从小到大排序
+                else:
+                    raise ValueError(f"monitor: {self.monitor} not supported")
+
+                # Sort both monitor_list and model_list based on sorted indices
+                self.monitor_list = [self.monitor_list[i] for i in sorted_indices]
+                self.model_list = [self.model_list[i] for i in sorted_indices]
+
+                if len(self.monitor_list) > self.save_n:
+                    # 删除最差的model
+                    del_monitor_index = self.monitor_list.pop()
+                    del_model_path = self.model_list.pop()
+                    del_model_path = os.path.join(os.getcwd(), del_model_path)
+                    os.remove(del_model_path)
+                    del_model_yaml = del_model_path.replace(".pt", ".yaml")
+                    os.remove(del_model_yaml)
+                    logging.info(f"[Rank {rank}] Delete model:  {del_model_path} with {self.monitor} {del_monitor_index}")
+
+                logging.info(f"[Rank {rank}] Best model:    {self.model_list[0]} with {self.monitor} {self.monitor_list[0]}")
+                # 确保model_list和monitor_list长度一致
+                assert len(self.monitor_list) == len(self.model_list), "monitor_list and model_list length not equal"
+                # 确保model_list和monitor_list长度不超过save_n
+                assert len(self.monitor_list) <= self.save_n, "monitor_list and model_list length exceed save_n"
+
+
+

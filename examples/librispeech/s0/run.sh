@@ -16,7 +16,7 @@ fi
 # if you don't want to utilize all available GPU resources.
 export CUDA_VISIBLE_DEVICES="${gpu_list}"
 echo "CUDA_VISIBLE_DEVICES is ${CUDA_VISIBLE_DEVICES}"
-stage=0 # start from 0 if you need to start from data preparation
+stage=5 # start from 0 if you need to start from data preparation
 stop_stage=5
 
 # You should change the following two parameters for multiple machine training,
@@ -26,16 +26,14 @@ num_nodes=1
 job_id=2023
 
 # data
-data_url=www.openslr.org/resources/12
-# use your own data path
-datadir=/export/data/en-asr-data/OpenSLR
+datadir=/data/NAS_PLUS/asr_datasets
 # wav data dir
 wave_data=data
 data_type=raw
 # Optional train_config
 # 1. conf/train_transformer_large.yaml: Standard transformer
 train_config=conf/train_conformer.yaml
-checkpoint=
+checkpoint="/ssd/zhuang/code/wenet/examples/librispeech/s0/exp/sp_spec_aug/epoch_47.pt"
 num_workers=1
 do_delta=false
 
@@ -68,12 +66,6 @@ deepspeed_save_states="model_only"
 
 . tools/parse_options.sh || exit 1;
 
-if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
-  echo "stage -1: Data Download"
-  for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
-    local/download_and_untar.sh ${datadir} ${data_url} ${part}
-  done
-fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
   ### Task dependent. You have to make data the following preparation part by yourself.
@@ -84,6 +76,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     local/data_prep_torchaudio.sh ${datadir}/LibriSpeech/${part} $wave_data/${part//-/_}
   done
 fi
+
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   ### Task dependent. You have to design training and dev sets by yourself.
@@ -149,6 +142,11 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
   # train.py will write $train_config to $dir/train.yaml with model input
   # and output dimension, train.yaml will be used for inference or model
   # export later
+
+  current_time=$(date "+%Y-%m-%d_%H-%M")
+  log_file="${dir}/train.log.txt.${current_time}"
+  echo "log_file: ${log_file}"
+
   if [ ${train_engine} == "deepspeed" ]; then
     echo "$0: using deepspeed"
   else
@@ -170,8 +168,9 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
       --num_workers ${num_workers} \
       --pin_memory \
       --deepspeed_config ${deepspeed_config} \
-      --deepspeed.save_states ${deepspeed_save_states}
+      --deepspeed.save_states ${deepspeed_save_states} &> ${log_file}
 fi
+
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
   # Test model, please specify the model you want to test by --checkpoint
@@ -179,19 +178,27 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
   mkdir -p $dir/test
   if [ ${average_checkpoint} == true ]; then
     decode_checkpoint=$dir/avg_${average_num}.pt
-    echo "do model average and final checkpoint is $decode_checkpoint"
-    python wenet/bin/average_model.py \
-      --dst_model $decode_checkpoint \
-      --src_path $dir  \
-      --num ${average_num} \
-      --val_best
+    # 如果不存在平均模型，则先进行平均
+    if [ ! -f $decode_checkpoint ]; then
+      echo "do model average and final checkpoint is $decode_checkpoint"
+      python wenet/bin/average_model.py \
+        --dst_model $decode_checkpoint \
+        --src_path $dir  \
+        --num ${average_num} \
+        --val_best
+    fi
+  else
+    echo "do not do model average and final checkpoint is $checkpoint"
+    decode_checkpoint=$dir/$checkpoint
   fi
-  # Specify decoding_chunk_size if it's a unified dynamic chunk trained model
-  # -1 for full chunk
+
   decoding_chunk_size=
   ctc_weight=0.5
+  reverse_weight=0.0
   for test in $recog_set; do
-    result_dir=$dir/${test}
+    result_dir="${decode_checkpoint}-ctc${ctc_weight}-re${reverse_weight}-inference/${test}"
+    mkdir -p $result_dir
+
     python wenet/bin/recognize.py --gpu 0 \
       --modes $decode_modes \
       --config $dir/train.yaml \

@@ -27,7 +27,8 @@ def Dataset(data_type,
             data_list_file,
             tokenizer: Optional[BaseTokenizer] = None,
             conf=None,
-            partition=True):
+            partition=True,
+            **configs):
     """ Construct dataset from arguments
 
         We have two shuffle stage in the Dataset. The first is global
@@ -66,15 +67,13 @@ def Dataset(data_type,
     dataset = dataset.map_ignore_error(processor.decode_wav)
 
     singal_channel_conf = conf.get('singal_channel_conf', {})
-    dataset = dataset.map(
-        partial(processor.singal_channel, **singal_channel_conf))
+    dataset = dataset.map(partial(processor.singal_channel, **singal_channel_conf))
 
     speaker_conf = conf.get('speaker_conf', None)
     if speaker_conf is not None:
         assert 'speaker_table_path' in speaker_conf
         speaker_table = read_symbol_table(speaker_conf['speaker_table_path'])
-        dataset = dataset.map(
-            partial(processor.parse_speaker, speaker_dict=speaker_table))
+        dataset = dataset.map(partial(processor.parse_speaker, speaker_dict=speaker_table))
 
     if tokenizer is not None:
         dataset = dataset.map(partial(processor.tokenize, tokenizer=tokenizer))
@@ -127,8 +126,7 @@ def Dataset(data_type,
     sort = conf.get('sort', True)
     if sort:
         sort_conf = conf.get('sort_conf', {})
-        dataset = dataset.sort(buffer_size=sort_conf['sort_size'],
-                               key_func=processor.sort_by_feats)
+        dataset = dataset.sort(buffer_size=sort_conf['sort_size'], key_func=processor.sort_by_feats)
 
     batch_conf = conf.get('batch_conf', {})
     batch_type = batch_conf.get('batch_type', 'static')
@@ -147,9 +145,6 @@ def Dataset(data_type,
             wrapper_class=processor.padding)
     else:
         max_frames_in_batch = batch_conf.get('max_frames_in_batch', 12000)
-        dataset = dataset.dynamic_batch(
-            processor.DynamicBatchWindow(max_frames_in_batch),
-            wrapper_class=processor.padding,
-        )
+        dataset = dataset.dynamic_batch(processor.DynamicBatchWindow(max_frames_in_batch), wrapper_class=processor.padding, )
 
     return dataset

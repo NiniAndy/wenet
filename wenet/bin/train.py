@@ -37,8 +37,8 @@ from wenet.utils.train_utils import (
     add_deepspeed_args, add_trace_args, init_distributed,
     init_dataset_and_dataloader, check_modify_and_save_config,
     init_optimizer_and_scheduler, init_scaler, trace_and_print_model,
-    wrap_cuda_model, init_summarywriter, save_model, log_per_epoch,
-    add_lora_args, reinit_lora, monitor_save)
+    wrap_cuda_model, init_summarywriter, log_per_epoch,
+    add_lora_args, reinit_lora)
 
 
 def get_args():
@@ -93,7 +93,7 @@ def main():
     train_dataset, cv_dataset, train_data_loader, cv_data_loader = init_dataset_and_dataloader(args, configs, tokenizer)
 
     # Do some sanity checks and save config to arsg.model_dir
-    configs = check_modify_and_save_config(args, configs, tokenizer.symbol_table)
+    configs = check_modify_and_save_config(args, configs, tokenizer)
 
     # Init asr model from configs
     model, configs = init_model(args, configs)
@@ -112,19 +112,17 @@ def main():
     writer = init_summarywriter(args)
 
     # Dispatch model from cpu to gpu
-
     model, device = wrap_cuda_model(args, model, configs)
 
     # Get optimizer & scheduler
     model, optimizer, scheduler = init_optimizer_and_scheduler(args, configs, model)
 
-    monitor = configs.get('monitor', "loss")
-    save_n = configs.get('save_n', 10)
-    monitor_list = []
-    model_list = []
-
+    # Get executor
+    tag = configs["init_infos"].get("tag", "init")
+    executor = Executor(global_step=configs["init_infos"].get('step', -1), device=device,
+                        monitor = configs.get("monitor", "loss"), save_n = configs.get("save_n", 10))
     # Save checkpoints
-    save_model(model,
+    executor.save_model(model,
                info_dict={
                    "save_time":
                    datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
@@ -132,10 +130,6 @@ def main():
                    "init",
                    **configs
                })
-
-    # Get executor
-    tag = configs["init_infos"].get("tag", "init")
-    executor = Executor(global_step=configs["init_infos"].get('step', -1), device=device)
 
     # Init scaler, used for pytorch amp mixed precision training
     scaler = init_scaler(args)
@@ -169,18 +163,6 @@ def main():
         # NOTE(xcsong): Ensure all ranks start CV at the same time.
         loss_dict = executor.cv(model, cv_data_loader, configs)
 
-        monitor_dict, monitor_list, model_list, del_model = monitor_save(loss_dict, monitor_list, model_list, monitor , save_n)
-
-        if monitor_dict["best"] == True:
-            if "best_acc" in monitor_dict:
-                best = monitor_dict["best_acc"]
-            elif "best_loss" in monitor_dict:
-                best = monitor_dict["best_loss"]
-            else:
-                raise ValueError("best info is mistake")
-            if local_rank == 0:
-                logging.info(f"[Rank {local_rank}], epoch: {epoch} is the best model {monitor} {best}")
-
         info_dict = {
             'epoch': epoch,
             'lrs': [group['lr'] for group in optimizer.param_groups],
@@ -198,22 +180,11 @@ def main():
         time_escaped = (time2 - time1) / 3600.0
         if local_rank == 0:
             logging.info(
-                f"[Rank {local_rank}], "
-                f"time_escaped_epoch: {time_escaped:.3f} hours, "
-                f"estimated to finish {end_epoch} "
+                f"[Rank {local_rank}] Time escaped epoch: {time_escaped:.3f} hours, estimated to finish {end_epoch} "
                 f"epoch: {(end_epoch - epoch) * time_escaped:.3f} hours"
             )
 
-        # Save checkpoints
-        if monitor_dict["save_flag"] == True:
-            save_model_path = save_model(model, info_dict=info_dict)
-            if del_model is not None:
-                if local_rank == 0:
-                    logging.info(f"{del_model} is deleted")
-            model_list.append(save_model_path)
-
-        print ("\n")
-
+        executor.save_model(model, info_dict=info_dict)
         final_epoch = epoch
 
     if final_epoch is not None and rank == 0:
