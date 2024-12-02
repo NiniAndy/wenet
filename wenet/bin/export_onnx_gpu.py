@@ -91,12 +91,12 @@ class StreamingEncoder(torch.nn.Module):
     ):
         super().__init__()
         self.ctc = model.ctc
-        self.subsampling_rate = model.encoder.embed.subsampling_rate
-        self.embed = model.encoder.embed
-        self.global_cmvn = model.encoder.global_cmvn
+        self.subsampling_rate = model.audio_encoder.embed.subsampling_rate
+        self.embed = model.audio_encoder.embed
+        self.global_cmvn = model.audio_encoder.global_cmvn
         self.required_cache_size = required_cache_size
         self.beam_size = beam_size
-        self.encoder = model.encoder
+        self.encoder = model.audio_encoder
         self.transformer = transformer
         self.return_ctc_logprobs = return_ctc_logprobs
 
@@ -112,7 +112,7 @@ class StreamingEncoder(torch.nn.Module):
             required_cache_size (int): cache size required for next chunk
                 compuation
                 > 0: actual cache size
-                <= 0: not allowed in streaming gpu encoder                   `
+                <= 0: not allowed in streaming gpu audio_encoder                   `
             att_cache (torch.Tensor): cache tensor for KEY & VALUE in
                 transformer/conformer attention, with shape
                 (b, elayers, head, cache_t1, d_k * 2), where
@@ -149,7 +149,7 @@ class StreamingEncoder(torch.nn.Module):
         att_cache = torch.transpose(att_cache, 0, 1)
         cnn_cache = torch.transpose(cnn_cache, 0, 1)
 
-        # rewrite encoder.forward_chunk
+        # rewrite audio_encoder.forward_chunk
         # <---------forward_chunk START--------->
         xs = self.global_cmvn(chunk_xs)
         # chunk mask is important for batch inferencing since
@@ -236,14 +236,14 @@ class StreamingSqueezeformerEncoder(torch.nn.Module):
     def __init__(self, model, required_cache_size, beam_size):
         super().__init__()
         self.ctc = model.ctc
-        self.subsampling_rate = model.encoder.embed.subsampling_rate
-        self.embed = model.encoder.embed
-        self.global_cmvn = model.encoder.global_cmvn
+        self.subsampling_rate = model.audio_encoder.embed.subsampling_rate
+        self.embed = model.audio_encoder.embed
+        self.global_cmvn = model.audio_encoder.global_cmvn
         self.required_cache_size = required_cache_size
         self.beam_size = beam_size
-        self.encoder = model.encoder
-        self.reduce_idx = model.encoder.reduce_idx
-        self.recover_idx = model.encoder.recover_idx
+        self.encoder = model.audio_encoder
+        self.reduce_idx = model.audio_encoder.reduce_idx
+        self.recover_idx = model.audio_encoder.recover_idx
         if self.reduce_idx is None:
             self.time_reduce = None
         else:
@@ -279,7 +279,7 @@ class StreamingSqueezeformerEncoder(torch.nn.Module):
             required_cache_size (int): cache size required for next chunk
                 compuation
                 > 0: actual cache size
-                <= 0: not allowed in streaming gpu encoder                   `
+                <= 0: not allowed in streaming gpu audio_encoder                   `
             att_cache (torch.Tensor): cache tensor for KEY & VALUE in
                 transformer/conformer attention, with shape
                 (b, elayers, head, cache_t1, d_k * 2), where
@@ -316,7 +316,7 @@ class StreamingSqueezeformerEncoder(torch.nn.Module):
         att_cache = torch.transpose(att_cache, 0, 1)
         cnn_cache = torch.transpose(cnn_cache, 0, 1)
 
-        # rewrite encoder.forward_chunk
+        # rewrite audio_encoder.forward_chunk
         # <---------forward_chunk START--------->
         xs = self.global_cmvn(chunk_xs)
         # chunk mask is important for batch inferencing since
@@ -437,18 +437,18 @@ class StreamingEfficientConformerEncoder(torch.nn.Module):
     def __init__(self, model, required_cache_size, beam_size):
         super().__init__()
         self.ctc = model.ctc
-        self.subsampling_rate = model.encoder.embed.subsampling_rate
-        self.embed = model.encoder.embed
-        self.global_cmvn = model.encoder.global_cmvn
+        self.subsampling_rate = model.audio_encoder.embed.subsampling_rate
+        self.embed = model.audio_encoder.embed
+        self.global_cmvn = model.audio_encoder.global_cmvn
         self.required_cache_size = required_cache_size
         self.beam_size = beam_size
-        self.encoder = model.encoder
+        self.encoder = model.audio_encoder
 
         # Efficient Conformer
-        self.stride_layer_idx = model.encoder.stride_layer_idx
-        self.stride = model.encoder.stride
-        self.num_blocks = model.encoder.num_blocks
-        self.cnn_module_kernel = model.encoder.cnn_module_kernel
+        self.stride_layer_idx = model.audio_encoder.stride_layer_idx
+        self.stride = model.audio_encoder.stride
+        self.num_blocks = model.audio_encoder.num_blocks
+        self.cnn_module_kernel = model.audio_encoder.cnn_module_kernel
 
     def calculate_downsampling_factor(self, i: int) -> int:
         factor = 1
@@ -507,7 +507,7 @@ class StreamingEfficientConformerEncoder(torch.nn.Module):
         att_cache = torch.transpose(att_cache, 0, 1)
         cnn_cache = torch.transpose(cnn_cache, 0, 1)
 
-        # rewrite encoder.forward_chunk
+        # rewrite audio_encoder.forward_chunk
         # <---------forward_chunk START--------->
         xs = self.global_cmvn(chunk_xs)
         # chunk mask is important for batch inferencing since
@@ -757,7 +757,7 @@ def export_offline_encoder(model, configs, args, logger, encoder_onnx_path):
                                 high=seq_len,
                                 size=(bz, ),
                                 dtype=torch.int32)
-    encoder = Encoder(model.encoder, model.ctc, beam_size)
+    encoder = Encoder(model.audio_encoder, model.ctc, beam_size)
     encoder.eval()
 
     torch.onnx.export(
@@ -818,9 +818,9 @@ def export_offline_encoder(model, configs, args, logger, encoder_onnx_path):
     }
     ort_outs = ort_session.run(None, ort_inputs)
 
-    # check encoder output
+    # check audio_encoder output
     test(to_numpy([o0, o1, o2, o3, o4]), ort_outs)
-    logger.info("export offline onnx encoder succeed!")
+    logger.info("export offline onnx audio_encoder succeed!")
     onnx_config = {
         "beam_size": args.beam_size,
         "reverse_weight": args.reverse_weight,
@@ -832,8 +832,8 @@ def export_offline_encoder(model, configs, args, logger, encoder_onnx_path):
 
 def export_online_encoder(model, configs, args, logger, encoder_onnx_path):
     decoding_chunk_size = args.decoding_chunk_size
-    subsampling = model.encoder.embed.subsampling_rate
-    context = model.encoder.embed.right_context + 1
+    subsampling = model.audio_encoder.embed.subsampling_rate
+    context = model.audio_encoder.embed.right_context + 1
     decoding_window = (decoding_chunk_size - 1) * subsampling + context
     batch_size = 32
     audio_len = decoding_window
@@ -847,10 +847,10 @@ def export_online_encoder(model, configs, args, logger, encoder_onnx_path):
         transformer = True
     num_decoding_left_chunks = args.num_decoding_left_chunks
     required_cache_size = decoding_chunk_size * num_decoding_left_chunks
-    if configs["encoder"] == "squeezeformer":
+    if configs["audio_encoder"] == "squeezeformer":
         encoder = StreamingSqueezeformerEncoder(model, required_cache_size,
                                                 args.beam_size)
-    elif configs["encoder"] == "efficientConformer":
+    elif configs["audio_encoder"] == "efficientConformer":
         encoder = StreamingEfficientConformerEncoder(model,
                                                      required_cache_size,
                                                      args.beam_size)
@@ -864,7 +864,7 @@ def export_online_encoder(model, configs, args, logger, encoder_onnx_path):
         )
     encoder.eval()
 
-    # begin to export encoder
+    # begin to export audio_encoder
     chunk_xs = torch.randn(batch_size,
                            audio_len,
                            feature_size,
@@ -972,7 +972,7 @@ def export_online_encoder(model, configs, args, logger, encoder_onnx_path):
         del ort_inputs["cnn_cache"]
     ort_outs = ort_session.run(None, ort_inputs)
     test(to_numpy(torch_outs), ort_outs, rtol=1e-03, atol=1e-05)
-    logger.info("export to onnx streaming encoder succeed!")
+    logger.info("export to onnx streaming audio_encoder succeed!")
     onnx_config = {
         "subsampling_rate": subsampling,
         "context": context,
@@ -993,7 +993,7 @@ def export_rescoring_decoder(model, configs, args, logger, decoder_onnx_path,
     bz, seq_len = 32, 100
     beam_size = args.beam_size
     decoder = Decoder(
-        model.decoder,
+        model.context_decoder,
         model.ctc_weight,
         model.reverse_weight,
         beam_size,
@@ -1104,17 +1104,17 @@ def export_rescoring_decoder(model, configs, args, logger, decoder_onnx_path,
 
     # if model.reverse weight == 0,
     # the r_hyps_pad will be removed
-    # from the onnx decoder since it doen't play any role
+    # from the onnx context_decoder since it doen't play any role
     if model.reverse_weight == 0:
         del ort_inputs["r_hyps_pad_sos_eos"]
     ort_outs = ort_session.run(None, ort_inputs)
 
-    # check decoder output
+    # check context_decoder output
     if decoder_fastertransformer:
         test(to_numpy(o0), ort_outs, rtol=1e-03, atol=1e-05)
     else:
         test(to_numpy([o0]), ort_outs, rtol=1e-03, atol=1e-05)
-    logger.info("export to onnx decoder succeed!")
+    logger.info("export to onnx context_decoder succeed!")
 
 
 if __name__ == "__main__":
@@ -1153,18 +1153,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_onnx_dir",
         default="onnx_model",
-        help="output onnx encoder and decoder directory",
+        help="output onnx audio_encoder and context_decoder directory",
     )
     parser.add_argument(
         "--fp16",
         action="store_true",
         help="whether to export fp16 model, default false",
     )
-    # arguments for streaming encoder
+    # arguments for streaming audio_encoder
     parser.add_argument(
         "--streaming",
         action="store_true",
-        help="whether to export streaming encoder, default false",
+        help="whether to export streaming audio_encoder, default false",
     )
     parser.add_argument(
         "--decoding_chunk_size",
@@ -1188,7 +1188,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--return_ctc_logprobs",
         action="store_true",
-        help="return full ctc_log_probs for TLG streaming encoder",
+        help="return full ctc_log_probs for TLG streaming audio_encoder",
     )
     args = parser.parse_args()
 
@@ -1219,7 +1219,7 @@ if __name__ == "__main__":
 
     if not os.path.exists(args.output_onnx_dir):
         os.mkdir(args.output_onnx_dir)
-    encoder_onnx_path = os.path.join(args.output_onnx_dir, "encoder.onnx")
+    encoder_onnx_path = os.path.join(args.output_onnx_dir, "audio_encoder.onnx")
     export_enc_func = None
     if args.streaming:
         assert args.decoding_chunk_size > 0
@@ -1231,7 +1231,7 @@ if __name__ == "__main__":
     onnx_config = export_enc_func(model, configs, args, logger,
                                   encoder_onnx_path)
 
-    decoder_onnx_path = os.path.join(args.output_onnx_dir, "decoder.onnx")
+    decoder_onnx_path = os.path.join(args.output_onnx_dir, "context_decoder.onnx")
     export_rescoring_decoder(
         model,
         configs,

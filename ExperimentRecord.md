@@ -1,3 +1,13 @@
+# Code Specification
+
+```
+dataset: asr2   # 增加了pny tokenizer
+```
+
+
+
+
+
 # Experiment
 
 ## AISHLL-1 Banchmark
@@ -15,9 +25,9 @@
 | --attn beam search  |      | 4.92 |
 | --ctc attn rescore  |      | todo |
 | **ParaformerV2**    |      |      |
-| --ctc greedy search |      | 4.84 |
-| --ctc beam search   |      | 4.83 |
-| --attn beam search  |      | 4.88 |
+| --ctc greedy search |      | 4.86 |
+| --ctc beam search   |      | 4.86 |
+| --attn beam search  |      | 4.77 |
 | --ctc attn rescore  |      | todo |
 |                     |      |      |
 |                     |      |      |
@@ -51,16 +61,16 @@
 | Model               | Dev clean | Dev other | Test clean | test other |
 | ------------------- | :-------: | :-------: | :--------: | :--------: |
 | **Conformer**       |           |           |            |            |
-| *ctc0.3-re0.5*      |           |           |            |            |
+| ×*ctc0.3-re0.5*     |           |           |            |            |
 | --ctc greedy search |   3.49    |   9.59    |    3.66    |    9.59    |
 | --ctc beam search   |   3.49    |   9.61    |    3.66    |    9.55    |
 | --attn beam search  |   3.52    |   9.04    |    3.85    |    8.97    |
 | --ctc attn rescore  |   3.10    |   8.91    |    3.29    |    8.81    |
-| *ctc0.3-re0.0*      |           |           |            |            |
-| --ctc greedy search |   3.49    |   9.59    |    3.66    |    9.59    |
-| --ctc beam search   |   3.49    |   9.61    |    3.66    |    9.55    |
-| --attn beam search  |   3.52    |   9.04    |    3.85    |    8.97    |
-| --ctc attn rescore  |   3.10    |   8.91    |    3.29    |    8.81    |
+| √*ctc0.3-re0.0*     |           |           |            |            |
+| --ctc greedy search |   3.69    |   9.72    |    3.93    |    9.88    |
+| --ctc beam search   |   3.66    |   9.74    |    3.89    |    9.85    |
+| --attn beam search  |   3.56    |   8.61    |    4.48    |    8.73    |
+| --ctc attn rescore  |   3.16    |   8.78    |    3.42    |    8.73    |
 | **Paraformer**      |           |           |            |            |
 | --ctc greedy search |           |           |            |            |
 | --ctc beam search   |           |           |            |            |

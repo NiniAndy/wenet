@@ -128,7 +128,7 @@ class CTLModel(ASRModel):
             speech, speech_lengths)
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
 
-        # 2a. Attention-decoder branch
+        # 2a. Attention-context_decoder branch
         if self.ctc_weight != 1.0:
             loss_att, acc_att = self._calc_att_loss(encoder_out, encoder_mask,
                                                     text, text_lengths)
@@ -177,7 +177,7 @@ class CTLModel(ASRModel):
         encoder_out, encoder_mask = self.encoder(speech, speech_lengths)
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
 
-        # 2a. Attention-decoder branch
+        # 2a. Attention-context_decoder branch
         if self.ctc_weight != 1.0:
             loss_att, acc_att = self._calc_att_loss(encoder_out, encoder_mask,
                                                     text, text_lengths)

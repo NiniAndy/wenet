@@ -3,14 +3,14 @@ from __future__ import print_function
 import yaml
 from argparse import Namespace
 
-from examples.pt_deployment.subfunction import inference, test, train
+from examples.cn_correction.subfunction import inference, test, train
 from wenet.utils.config import override_config
 
 
 if __name__ == '__main__':
     stage = "train"
 
-    args_path = "/ssd/zhuang/code/wenet/examples/pt_deployment/args.yaml"
+    args_path = "/ssd/zhuang/code/wenet/examples/cn_correction/args.yaml"
     with open(args_path, 'r', encoding='utf-8') as file:
         args = yaml.safe_load(file)
 

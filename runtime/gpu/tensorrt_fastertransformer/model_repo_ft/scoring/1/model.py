@@ -279,7 +279,7 @@ class TritonPythonModel:
         input_tensors.append(in_tensor_5)
 
         inference_request = pb_utils.InferenceRequest(
-            model_name='decoder',
+            model_name='context_decoder',
             requested_output_names=['best_index'],
             inputs=input_tensors)
 

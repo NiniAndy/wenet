@@ -209,7 +209,7 @@ class MultiHeadedAttention(nn.Module):
                 k = torch.cat([key_cache, k], dim=seq_axis)
             if value_cache.size(0) > 0:
                 v = torch.cat([value_cache, v], dim=seq_axis)
-            # NOTE(xcsong): We do cache slicing in encoder.forward_chunk, since it's
+            # NOTE(xcsong): We do cache slicing in audio_encoder.forward_chunk, since it's
             #   non-trivial to calculate `next_cache_start` here.
             # new_cache = torch.cat((k, v), dim=-1) if not self.training else cache
             new_cache = (k, v)
@@ -261,14 +261,14 @@ class MultiHeadedAttention(nn.Module):
             value (torch.Tensor): Value tensor (#batch, time2, size).
             mask (torch.Tensor): Mask tensor (#batch, 1, time2) or
                 (#batch, time1, time2).
-                1.When applying cross attention between decoder and encoder,
+                1.When applying cross attention between context_decoder and audio_encoder,
                 the batch padding mask for input is in (#batch, 1, T) shape.
-                2.When applying self attention of encoder,
+                2.When applying self attention of audio_encoder,
                 the mask is in (#batch, T, T)  shape.
-                3.When applying self attention of decoder,
+                3.When applying self attention of context_decoder,
                 the mask is in (#batch, L, L)  shape.
-                4.If the different position in decoder see different block
-                of the encoder, such as Mocha, the passed in mask could be
+                4.If the different position in context_decoder see different block
+                of the audio_encoder, such as Mocha, the passed in mask could be
                 in (#batch, L, T) shape. But there is no such case in current
                 Wenet.
             cache (torch.Tensor): Cache tensor (1, head, cache_t, d_k * 2),
@@ -630,14 +630,14 @@ class RopeMultiHeadedAttention(MultiHeadedAttention):
             value (torch.Tensor): Value tensor (#batch, time2, size).
             mask (torch.Tensor): Mask tensor (#batch, 1, time2) or
                 (#batch, time1, time2).
-                1.When applying cross attention between decoder and encoder,
+                1.When applying cross attention between context_decoder and audio_encoder,
                 the batch padding mask for input is in (#batch, 1, T) shape.
-                2.When applying self attention of encoder,
+                2.When applying self attention of audio_encoder,
                 the mask is in (#batch, T, T)  shape.
-                3.When applying self attention of decoder,
+                3.When applying self attention of context_decoder,
                 the mask is in (#batch, L, L)  shape.
-                4.If the different position in decoder see different block
-                of the encoder, such as Mocha, the passed in mask could be
+                4.If the different position in context_decoder see different block
+                of the audio_encoder, such as Mocha, the passed in mask could be
                 in (#batch, L, T) shape. But there is no such case in current
                 Wenet.
             cache (torch.Tensor): Cache tensor (1, head, cache_t, d_k * 2),

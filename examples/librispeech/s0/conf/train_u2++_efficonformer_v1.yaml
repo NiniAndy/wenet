@@ -1,5 +1,5 @@
 # network architecture
-# encoder related
+# audio_encoder related
 encoder: efficientConformer
 encoder_conf:
     activation_type: 'swish'
@@ -26,7 +26,7 @@ encoder_conf:
         group_size: 3                   # group size of every GroupedAttention layer
         stride_kernel: true             # true: recompute cnn kernels with stride
 
-# decoder related
+# context_decoder related
 decoder: bitransformer
 decoder_conf:
     attention_heads: 8

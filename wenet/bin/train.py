@@ -31,7 +31,7 @@ from wenet.bin.model_summary import model_summary
 from wenet.utils.executor import Executor
 from wenet.utils.config import override_config
 from wenet.utils.init_model import init_model
-from wenet.utils.init_tokenizer import init_tokenizer
+from wenet.utils.init_tokenizer import init_tokenizer, init_pny_tokenizer
 from wenet.utils.train_utils import (
     add_fsdp_args, add_model_args, add_dataset_args, add_ddp_args,
     add_deepspeed_args, add_trace_args, init_distributed,
@@ -85,15 +85,19 @@ def main():
 
     # init tokenizer
     tokenizer = init_tokenizer(configs)
+    tokenizer_dict = {"tokenizer": tokenizer}
+    if "pny_tokenizer" in configs:
+        pny_tokenizer = init_pny_tokenizer(configs)
+        tokenizer_dict["pny_tokenizer"] = pny_tokenizer
 
     # Init env for ddp OR deepspeed
     _, _, rank = init_distributed(args)
 
     # Get dataset & dataloader
-    train_dataset, cv_dataset, train_data_loader, cv_data_loader = init_dataset_and_dataloader(args, configs, tokenizer)
+    train_dataset, cv_dataset, train_data_loader, cv_data_loader = init_dataset_and_dataloader(args, configs, tokenizer_dict)
 
     # Do some sanity checks and save config to arsg.model_dir
-    configs = check_modify_and_save_config(args, configs, tokenizer)
+    configs = check_modify_and_save_config(args, configs, **tokenizer_dict)
 
     # Init asr model from configs
     model, configs = init_model(args, configs)
@@ -121,15 +125,11 @@ def main():
     tag = configs["init_infos"].get("tag", "init")
     executor = Executor(global_step=configs["init_infos"].get('step', -1), device=device,
                         monitor = configs.get("monitor", "loss"), save_n = configs.get("save_n", 10))
+
+    time_tag = datetime.datetime.now().strftime('%d_%m_%Y_%H_%M_%S')
+
     # Save checkpoints
-    executor.save_model(model,
-               info_dict={
-                   "save_time":
-                   datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
-                   "tag":
-                   "init",
-                   **configs
-               })
+    executor.save_model(model, info_dict={"save_time": time_tag, "tag":"init", **configs})
 
     # Init scaler, used for pytorch amp mixed precision training
     scaler = init_scaler(args)

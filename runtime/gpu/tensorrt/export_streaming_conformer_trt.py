@@ -97,21 +97,21 @@ def get_parser():
     parser.add_argument(
         "--timeCacheFile",
         type=str,
-        default="./encoder.cache",
+        default="./audio_encoder.cache",
         help="Path to the saved engine cache file",
     )
 
     parser.add_argument(
         "--trtFile",
         type=str,
-        default="./encoder.plan",
+        default="./audio_encoder.plan",
         help="Path to the exported tensorrt engine",
     )
 
     parser.add_argument(
         "--onnxFile",
         type=str,
-        default="./encoder.onnx",
+        default="./audio_encoder.onnx",
         help="Path to the onnx file",
     )
 

@@ -37,7 +37,7 @@ device: 'cuda'
 dist_backend: 'nccl'
 dtype: 'fp32'
 enc_init: null
-enc_init_mods: ['encoder.']
+enc_init_mods: ['audio_encoder.']
 fp16_grad_sync: False
 freeze_modules: []
 fsdp_cpu_offload: False
@@ -51,7 +51,7 @@ lora_ckpt_path: null
 lora_dropout: 0
 lora_init_yaml: 'wenet/finetune/lora/config.yaml'
 lora_list: ['linear_out', 'linear_q', 'linear_k', 'linear_v']
-lora_modules: ['encoder.encoders']
+lora_modules: ['audio_encoder.encoders']
 lora_rank: 8
 lora_reinit: False
 model_dir: 'exp/paraformerV2'

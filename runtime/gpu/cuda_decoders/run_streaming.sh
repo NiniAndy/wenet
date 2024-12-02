@@ -115,8 +115,8 @@ fi
 
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
      echo "prepare files, you could skip it if you do it manually"
-     mkdir -p $model_repo_path/encoder/1/
-     cp $onnx_model_dir/encoder_fp16.onnx $model_repo_path/encoder/1/
+     mkdir -p $model_repo_path/audio_encoder/1/
+     cp $onnx_model_dir/encoder_fp16.onnx $model_repo_path/audio_encoder/1/
 
      cp $onnx_model_dir/units.txt $model_repo_path/scoring/units.txt
 

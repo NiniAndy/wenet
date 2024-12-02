@@ -7,10 +7,14 @@ solver_conf:
     accelerator: "gpu"
     accumulate_grad_batches: 4
     gradient_clip: 1
+    train_batch_size: 1
+    valid_batch_size: 1
+    test_batch_size: 1
+    num_workers: 1
 
 
 save_conf:
-    name: "paraformerV2"
+    name: "stage_1"
     save_top_k: 20
     every_n_epochs: 1
     save_dir: "exp"
@@ -24,10 +28,13 @@ inference_conf:
     view_nbest: False  # inference 阶段展示nbest个结果
 
 
+
+
 # args.yaml
+output_dir: "/ssd/zhuang/code/wenet/examples/pt_deployment"
 checkpoint: null
-config: '/ssd/zhuang/code/wenet/examples/aishell/paraformer/conf/train_paraformer_V2.yaml'
-cv_data: '/ssd/zhuang/code/wenet/examples/aishell/s0/data/dev/data.list'
+config: '/ssd/zhuang/code/wenet/examples/cn_correction/conf/train_transformer.yaml'
+cv_data: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/paraformer_text/dev_lab.txt"
 data_type: 'raw'
 deepscale: False
 deepscale_config: null
@@ -37,7 +44,7 @@ device: 'cuda'
 dist_backend: 'nccl'
 dtype: 'fp32'
 enc_init: null
-enc_init_mods: ['encoder.']
+enc_init_mods: ['audio_encoder.']
 fp16_grad_sync: False
 freeze_modules: []
 fsdp_cpu_offload: False
@@ -51,7 +58,7 @@ lora_ckpt_path: null
 lora_dropout: 0
 lora_init_yaml: 'wenet/finetune/lora/config.yaml'
 lora_list: ['linear_out', 'linear_q', 'linear_k', 'linear_v']
-lora_modules: ['encoder.encoders']
+lora_modules: ['audio_encoder.encoders']
 lora_rank: 8
 lora_reinit: False
 model_dir: 'exp/paraformerV2'
@@ -63,8 +70,9 @@ prefetch: 500
 print_model: False
 save_states: 'model_only'
 tensorboard_dir: 'tensorboard'
+test_data: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/paraformer_text/dev_lab.txt"
 timeout: 30
-train_data: '/ssd/zhuang/code/wenet/examples/aishell/s0/data/train/data.list'
+train_data: "/ssd/zhuang/code/FunASR/examples/ChineseCorrection/data/paraformer_text/dev_lab.txt"
 train_engine: 'torch_ddp'
 use_amp: False
 use_lora: False

@@ -34,7 +34,7 @@ class CTC(torch.nn.Module):
         """ Construct CTC module
         Args:
             odim: dimension of outputs
-            encoder_output_size: number of encoder projection units
+            encoder_output_size: number of audio_encoder projection units
             dropout_rate: dropout rate (0.0 ~ 1.0)
             reduce: reduce the CTC loss into a scalar
             blank_id: blank label.

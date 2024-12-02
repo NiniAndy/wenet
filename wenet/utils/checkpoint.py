@@ -92,7 +92,7 @@ def filter_modules(model_state_dict, modules):
 
 
 def load_trained_modules(model: torch.nn.Module, args: None):
-    # Load encoder modules with pre-trained model(s).
+    # Load audio_encoder modules with pre-trained model(s).
     enc_model_path = args.enc_init
     enc_modules = args.enc_init_mods
     main_state_dict = model.state_dict()

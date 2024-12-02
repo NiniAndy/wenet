@@ -20,7 +20,7 @@ class MyDataModule(pl.LightningDataModule):
         tokenizer = init_tokenizer(configs)
         configs = check_modify_and_save_config(args, configs, tokenizer)
 
-        self.tokenizer = tokenizer
+        self.tokenizer_dict = {"tokenizer": tokenizer}
         self.configs = configs
         self.args = args
 
@@ -38,11 +38,11 @@ class MyDataModule(pl.LightningDataModule):
         """
         if stage == 'fit' or stage is None:
             self.train_dataset, self.valid_dataset, self.dataloader_train, self.dataloader_valid = init_dataset_and_dataloader(
-                self.args, self.configs, self.tokenizer)
+                self.args, self.configs, self.tokenizer_dict)
             pass
         if stage == 'test' or stage is None:
             self.test_dataset, self.valid_dataset, self.dataloader_test, self.dataloader_valid = init_dataset_and_dataloader(
-                self.args, self.configs, self.tokenizer)
+                self.args, self.configs, self.tokenizer_dict)
             pass
 
     def train_dataloader(self):

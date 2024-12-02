@@ -1,20 +1,3 @@
-# Copyright (c) 2020 Mobvoi Inc. (authors: Binbin Zhang, Di Wu)
-#               2023 ASLP@NWPU (authors: He Wang, Fan Yu)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Modified from ESPnet(https://github.com/espnet/espnet) and
-# FunASR(https://github.com/alibaba-damo-academy/FunASR)
-
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -34,43 +17,6 @@ from wenet.utils.class_module import WENET_PREDICTOR_CLASSES
 from wenet.transducer.predictor import PredictorBase
 
 
-
-
-# class Paraformer(ASRModel):
-""" Paraformer: Fast and Accurate Parallel Transformer for
-    Non-autoregressive End-to-End Speech Recognition
-    see https://arxiv.org/pdf/2206.08317.pdf
-
-"""
-
-    # def __init__(self,
-    #              vocab_size: int,
-    #              encoder: BaseEncoder,
-    #              decoder: TransformerDecoder,
-    #              predictor: Predictor,
-    #              ctc: CTC,
-    #              ctc_weight: float = 0.5,
-    #              ignore_id: int = -1,
-    #              lsm_weight: float = 0,
-    #              length_normalized_loss: bool = False,
-    #              sampler: bool = True,
-    #              sampling_ratio: float = 0.75,
-    #              add_eos: bool = False,
-    #              special_tokens: Optional[Dict] = None,
-    #              apply_non_blank_embedding: bool = False):
-    #     # assert isinstance(encoder, SanmEncoder), isinstance(decoder, SanmDecoder)
-    #     super().__init__(
-    #         vocab_size,
-    #         encoder,
-    #         decoder,
-    #         ctc,
-    #         ctc_weight,
-    #         IGNORE_ID,
-    #         0.0,
-    #         lsm_weight,
-    #         length_normalized_loss,
-    #         None,
-    #         apply_non_blank_embedding)
 
 class Paraformer(ASRModel):
     def __init__(
@@ -130,7 +76,7 @@ class Paraformer(ASRModel):
         text = batch['target'].to(device)
         text_lengths = batch['target_lengths'].to(device)
 
-        # 0 encoder
+        # 0 audio_encoder
         encoder_out, encoder_mask = self.encoder(speech, speech_lengths)
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
 
@@ -141,7 +87,7 @@ class Paraformer(ASRModel):
             ys_pad_lens = text_lengths + 1
         acoustic_embd, token_num, _, _, _, tp_token_num, _ = self.predictor(encoder_out, ys_pad, encoder_mask, self.ignore_id)
 
-        # 2 decoder with sampler
+        # 2 context_decoder with sampler
         # TODO(Mddct): support mwer here
         decoder_out_1st = None
         if self.sampler:
@@ -282,7 +228,7 @@ class Paraformer(ASRModel):
         decoding_chunk_size: int = -1,
         num_decoding_left_chunks: int = -1,
     ) -> Dict[str, torch.Tensor]:
-        # encoder
+        # audio_encoder
         encoder_out, encoder_out_mask = self._forward_encoder(
             speech, speech_lengths, decoding_chunk_size,
             num_decoding_left_chunks)
@@ -291,7 +237,7 @@ class Paraformer(ASRModel):
         acoustic_embed, token_num, _, _, tp_alphas, _, tp_mask = self.predictor(encoder_out,mask=encoder_out_mask,)
         token_num = token_num.floor().to(speech_lengths.dtype)
 
-        # decoder
+        # context_decoder
         decoder_out, _ = self.decoder(encoder_out, encoder_out_mask, acoustic_embed, token_num)
         decoder_out = decoder_out.log_softmax(dim=-1)
 

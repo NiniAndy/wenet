@@ -26,9 +26,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-This script is for testing exported onnx encoder and decoder from
+This script is for testing exported onnx audio_encoder and context_decoder from
 export_onnx_gpu.py. The exported onnx models only support batch offline ASR inference.
-It requires a python wrapped c++ ctc decoder.
+It requires a python wrapped c++ ctc context_decoder.
 Please install it by following:
 https://github.com/Slyne/ctc_decoder.git
 """
@@ -44,7 +44,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from wenet.dataset.dataset import Dataset
+from wenet.dataset.asr_dataset import ASRDataset
 from wenet.utils.common import IGNORE_ID
 from wenet.utils.config import override_config
 from wenet.utils.init_tokenizer import init_tokenizer
@@ -77,10 +77,10 @@ def get_args():
     parser.add_argument('--dict', required=True, help='dict file')
     parser.add_argument('--encoder_onnx',
                         required=True,
-                        help='encoder onnx file')
+                        help='audio_encoder onnx file')
     parser.add_argument('--decoder_onnx',
                         required=True,
-                        help='decoder onnx file')
+                        help='context_decoder onnx file')
     parser.add_argument('--result_file', required=True, help='asr result file')
     parser.add_argument('--batch_size',
                         type=int,
@@ -138,11 +138,7 @@ def main():
     test_conf['batch_conf']['batch_size'] = args.batch_size
 
     tokenizer = init_tokenizer(configs)
-    test_dataset = Dataset(args.data_type,
-                           args.test_data,
-                           tokenizer,
-                           test_conf,
-                           partition=False)
+    test_dataset = ASRDataset(args.data_type, args.test_data, tokenizer, test_conf, partition=False)
     test_data_loader = DataLoader(test_dataset, batch_size=None, num_workers=0)
 
     # Init asr model from configs

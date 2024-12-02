@@ -27,7 +27,10 @@ from torch.nn.utils.rnn import pad_sequence
 import torchaudio
 import torchaudio.compliance.kaldi as kaldi
 import torch.nn.functional as F
+from itertools import chain
+
 from wenet.text.base_tokenizer import BaseTokenizer
+from examples.cn_correction.dataset import make_pny
 
 torchaudio.utils.sox_utils.set_buffer_size(16500)
 
@@ -389,6 +392,28 @@ def tokenize(sample, tokenizer: BaseTokenizer):
     return sample
 
 
+
+def pny_tokenize(sample, pny_tokenizer):
+    """ Decode text to chars or BPE
+        Inplace operation
+
+        Args:
+            sample: {key, wav, txt, sample_rate, ...}
+
+        Returns:
+            {key, wav, txt, tokens, label, sample_rate, ...}
+    """
+    assert 'txt' in sample
+    pass
+    pny_tokens = make_pny(sample['txt'])
+    # blank = ['<blank>']
+    # wrong_pny_list = list(chain(*zip(pny_tokens, blank * (len(pny_tokens) - 1)), [pny_tokens[-1]]))
+    pny_label = pny_tokenizer.tokens2ids(pny_tokens)
+    sample['pny_tokens'] = pny_tokens
+    sample['pny_label'] = pny_label
+    return sample
+
+
 def filter(sample,
            max_length=10240,
            min_length=10,
@@ -564,9 +589,16 @@ def padding(data):
         "tasks": tasks,
     }
     if 'speaker' in sample[0]:
-        speaker = torch.tensor([sample[i]['speaker'] for i in order],
-                               dtype=torch.int32)
+        speaker = torch.tensor([sample[i]['speaker'] for i in order], dtype=torch.int32)
         batch['speaker'] = speaker
+
+    if 'pny_label' in sample[0]:
+        sorted_pny_label = [torch.tensor(sample[i]['pny_label'], dtype=torch.int64) for i in order]
+        pny_label_lengths = torch.tensor([x.size(0) for x in sorted_pny_label], dtype=torch.int32)
+        padding_pny_label = pad_sequence(sorted_pny_label, batch_first=True, padding_value=-1)
+        batch['pny_target'] = padding_pny_label
+        batch['pny_target_lengths'] = pny_label_lengths
+
     return batch
 
 

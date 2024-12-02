@@ -170,7 +170,7 @@ def get_args():
         type=int,
         required=False,
         default=2,
-        help="encoder right context",
+        help="audio_encoder right context",
     )
 
     parser.add_argument(
@@ -402,7 +402,7 @@ async def main():
         frame_length_ms = 25
         add_frames = math.ceil(
             (frame_length_ms - frame_shift_ms) / frame_shift_ms)
-        # decode_window_length: input sequence length of streaming encoder
+        # decode_window_length: input sequence length of streaming audio_encoder
         if args.context > 0:
             # decode window length calculation for wenet
             decode_window_length = (args.chunk_size -

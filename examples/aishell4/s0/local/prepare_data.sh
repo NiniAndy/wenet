@@ -31,7 +31,7 @@ fi
 #    File Size      : 286M
 #    Bit Rate       : 968k
 #    Sample Encoding: 16-bit FLAC
-#    Comment        : 'encoder=Lavf57.76.100'
+#    Comment        : 'audio_encoder=Lavf57.76.100'
 for room_name in "train_L" "train_M" "train_S" "test"; do
   if [ -f ${aishell4_source_dir}/$room_name/wav_list.txt ];then
     rm  ${aishell4_source_dir}/$room_name/wav_list.txt

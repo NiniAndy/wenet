@@ -1,11 +1,11 @@
 # network architecture
-# encoder related
+# audio_encoder related
 encoder: e_branchformer
 encoder_conf:
     output_size: 256    # dimension of attention
     attention_heads: 8
     linear_units: 1024  # the number of units of position-wise feed forward
-    num_blocks: 17      # the number of encoder blocks
+    num_blocks: 17      # the number of audio_encoder blocks
     cgmlp_linear_units: 1024
     cgmlp_conv_kernel: 31
     use_linear_after_conv: false
@@ -14,13 +14,13 @@ encoder_conf:
     dropout_rate: 0.1
     positional_dropout_rate: 0.1
     attention_dropout_rate: 0.1
-    input_layer: conv2d # encoder input type, you can chose conv2d, conv2d6 and conv2d8
+    input_layer: conv2d # audio_encoder input type, you can chose conv2d, conv2d6 and conv2d8
     activation_type: 'swish'
     causal: false
     pos_enc_layer_type: 'rel_pos'
     selfattention_layer_type: 'rel_selfattn'
 
-# decoder related
+# context_decoder related
 decoder: transformer
 decoder_conf:
     attention_heads: 4

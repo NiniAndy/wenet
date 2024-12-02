@@ -24,41 +24,50 @@ from wenet.utils.class_model import WENET_MODEL_CLASSES
 
 
 
-def init_speech_model(args, configs):
+# def init_speech_model(args, configs):
+#
+#     model_class = configs.get('model', 'asr_model')
+#     model = WENET_MODEL_CLASSES[model_class](**configs)
+#
+#     # if model_type in WENET_SSL_MODEL_CLASS.keys():
+#     #     from wenet.ssl.init_model import init_model as init_ssl_model
+#     #     model = init_ssl_model(configs, audio_encoder)
+#
+#     return model, configs
+#
+#
+# def init_causal_llm(configs):
+#     vocab_size = configs['output_dim']
+#     assert configs['context_decoder'] == 'decoder_only'
+#     assert configs['model'] == 'causal_lm'
+#     decoder_only = DecoderOnly(**configs['decoder_conf'])
+#
+#     model = CausalLM(
+#         vocab_size,
+#         decoder_only,
+#         **configs['model_conf'],
+#         special_tokens=configs.get('tokenizer_conf', {}).get('special_tokens', None),
+#     )
+#     return model, configs
 
-    model_class = configs.get('model', 'asr_model')
-    model = WENET_MODEL_CLASSES[model_class](**configs)
-
-    # if model_type in WENET_SSL_MODEL_CLASS.keys():
-    #     from wenet.ssl.init_model import init_model as init_ssl_model
-    #     model = init_ssl_model(configs, encoder)
-
-    return model, configs
 
 
-def init_causal_llm(configs):
-    vocab_size = configs['output_dim']
-    assert configs['decoder'] == 'decoder_only'
-    assert configs['model'] == 'causal_lm'
-    decoder_only = DecoderOnly(**configs['decoder_conf'])
-
-    model = CausalLM(
-        vocab_size,
-        decoder_only,
-        **configs['model_conf'],
-        special_tokens=configs.get('tokenizer_conf', {}).get('special_tokens', None),
-    )
-    return model, configs
 
 
 def init_model(args, configs):
 
-    model_type = configs.get('model', 'asr_model')
-    configs['model'] = model_type
-    if model_type == 'causal_lm':
-        model, configs = init_causal_llm(configs)
-    else:
-        model, configs = init_speech_model(args, configs)
+    model_class = configs.get('model', 'asr_model')
+    # configs['model'] = model_type
+    # if model_type == 'causal_lm':
+    #     model, configs = init_causal_llm(configs)
+    # else:
+    #     model, configs = init_speech_model(args, configs)
+    configs['model'] = model_class
+    if model_class == 'causal_lm':
+        decoder_only = DecoderOnly(**configs['decoder_conf'])
+        configs["decoder_only"] = decoder_only
+
+    model = WENET_MODEL_CLASSES[model_class](**configs)
 
     if hasattr(args, 'use_lora') and args.use_lora:
         inject_lora_to_model(model, configs['lora_conf'])

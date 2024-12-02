@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader
 from textgrid import TextGrid, IntervalTier
 import math
 
-from wenet.dataset.dataset import Dataset
+from wenet.dataset.asr_dataset import ASRDataset
 from wenet.utils.ctc_utils import force_align
 from wenet.utils.common import get_subsample
 from wenet.utils.init_model import init_model
@@ -211,11 +211,7 @@ if __name__ == '__main__':
     ali_conf['batch_conf']['batch_size'] = args.batch_size
 
     tokenizer = init_tokenizer(configs)
-    ali_dataset = Dataset(args.data_type,
-                          args.input_file,
-                          tokenizer,
-                          ali_conf,
-                          partition=False)
+    ali_dataset = ASRDataset(args.data_type, args.input_file, tokenizer, ali_conf, partition=False)
 
     ali_data_loader = DataLoader(ali_dataset, batch_size=None, num_workers=0)
 

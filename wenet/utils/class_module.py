@@ -16,6 +16,7 @@ from wenet.transducer.predictor import (ConvPredictor, EmbeddingPredictor,
 from wenet.transformer.ctc import CTC
 from wenet.transformer.decoder import BiTransformerDecoder, TransformerDecoder
 from wenet.transformer.encoder import TransformerEncoder, ConformerEncoder
+from wenet.cn_correction.encoder import TextBertEncoder
 
 WENET_ENCODER_CLASSES = {
     "transformer": TransformerEncoder,
@@ -27,6 +28,7 @@ WENET_ENCODER_CLASSES = {
     "dual_transformer": DualTransformerEncoder,
     "dual_conformer": DualConformerEncoder,
     'sanm_encoder': SanmEncoder,
+    'text_bert': TextBertEncoder
 }
 
 WENET_DECODER_CLASSES = {

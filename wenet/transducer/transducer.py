@@ -24,7 +24,7 @@ from wenet.transformer.encoder import BaseEncoder
 #         self,
 #         vocab_size: int,
 #         blank: int,
-#         encoder: nn.Module,
+#         audio_encoder: nn.Module,
 #         predictor: PredictorBase,
 #         joint: nn.Module,
 #         attention_decoder: Optional[Union[TransformerDecoder,
@@ -46,7 +46,7 @@ from wenet.transformer.encoder import BaseEncoder
 #     ) -> None:
 #         assert attention_weight + ctc_weight + transducer_weight == 1.0
 #         super().__init__(vocab_size,
-#                          encoder,
+#                          audio_encoder,
 #                          attention_decoder,
 #                          ctc,
 #                          ctc_weight,
@@ -126,8 +126,8 @@ class Transducer(ASRModel):
 
         assert  self.attention_weight +  self.ctc_weight +  self.transducer_weight == 1.0
 
-        # Note(Mddct): decoder also means predictor in transducer,
-        # but here decoder is attention decoder
+        # Note(Mddct): context_decoder also means predictor in transducer,
+        # but here context_decoder is attention context_decoder
         del self.criterion_att
         if self.decoder is not None:
             self.criterion_att = LabelSmoothingLoss(
@@ -170,7 +170,7 @@ class Transducer(ASRModel):
                                        steps=steps)
 
         loss = self.transducer_weight * loss_rnnt
-        # optional attention decoder
+        # optional attention context_decoder
         loss_att: Optional[torch.Tensor] = None
         if self.attention_decoder_weight != 0.0 and self.decoder is not None:
             loss_att, acc_att = self._calc_att_loss(encoder_out, encoder_mask,
@@ -244,7 +244,7 @@ class Transducer(ASRModel):
         # td_score = loss_td * -1
         hyps_pad, _ = add_sos_eos(hyps_pad, self.sos, self.eos, self.ignore_id)
         hyps_lens = hyps_lens + 1  # Add <sos> at begining
-        # used for right to left decoder
+        # used for right to left context_decoder
         r_hyps_pad = reverse_pad_list(ori_hyps_pad, hyps_lens, self.ignore_id)
         r_hyps_pad, _ = add_sos_eos(r_hyps_pad, self.sos, self.eos,
                                     self.ignore_id)
@@ -253,8 +253,8 @@ class Transducer(ASRModel):
             self.reverse_weight)  # (beam_size, max_hyps_len, vocab_size)
         decoder_out = torch.nn.functional.log_softmax(decoder_out, dim=-1)
         decoder_out = decoder_out.cpu().numpy()
-        # r_decoder_out will be 0.0, if reverse_weight is 0.0 or decoder is a
-        # conventional transformer decoder.
+        # r_decoder_out will be 0.0, if reverse_weight is 0.0 or context_decoder is a
+        # conventional transformer context_decoder.
         r_decoder_out = torch.nn.functional.log_softmax(r_decoder_out, dim=-1)
         r_decoder_out = r_decoder_out.cpu().numpy()
         return decoder_out, r_decoder_out
@@ -281,7 +281,7 @@ class Transducer(ASRModel):
                 <0: for decoding, use full chunk.
                 >0: for decoding, use fixed chunk size as set.
                 0: used for training, it's prohibited here
-            simulate_streaming (bool): whether do encoder forward in a
+            simulate_streaming (bool): whether do audio_encoder forward in a
                 streaming fashion
             ctc_weight (float): ctc probability weight in transducer
                 prefix beam search.
@@ -331,7 +331,7 @@ class Transducer(ASRModel):
                 <0: for decoding, use full chunk.
                 >0: for decoding, use fixed chunk size as set.
                 0: used for training, it's prohibited here
-            simulate_streaming (bool): whether do encoder forward in a
+            simulate_streaming (bool): whether do audio_encoder forward in a
                 streaming fashion
             ctc_weight (float): ctc probability weight using in rescoring.
                 rescore_prob = ctc_weight * ctc_prob +
@@ -352,7 +352,7 @@ class Transducer(ASRModel):
         assert speech.shape[0] == speech_lengths.shape[0]
         assert decoding_chunk_size != 0
         if reverse_weight > 0.0:
-            # decoder should be a bitransformer decoder if reverse_weight > 0.0
+            # context_decoder should be a bitransformer context_decoder if reverse_weight > 0.0
             assert hasattr(self.decoder, 'right_decoder')
         device = speech.device
         batch_size = speech.shape[0]
@@ -385,7 +385,7 @@ class Transducer(ASRModel):
             hyps = [hyp[0] for hyp in hyps]
         assert len(hyps) == beam_size
 
-        # build hyps and encoder output
+        # build hyps and audio_encoder output
         hyps_pad = pad_sequence([
             torch.tensor(hyp, device=device, dtype=torch.long) for hyp in hyps
         ], True, self.ignore_id)  # (beam_size, max_hyps_len)
@@ -415,7 +415,7 @@ class Transducer(ASRModel):
             hyps_lens,
         )
 
-        # Only use decoder score for rescoring
+        # Only use context_decoder score for rescoring
         best_score = -float('inf')
         best_index = 0
         for i, hyp in enumerate(hyps):
@@ -424,7 +424,7 @@ class Transducer(ASRModel):
                 score += decoder_out[i][j][w]
             score += decoder_out[i][len(hyp)][self.eos]
             td_s = td_score[i]
-            # add right to left decoder score
+            # add right to left context_decoder score
             if reverse_weight > 0:
                 r_score = 0.0
                 for j, w in enumerate(hyp):
@@ -461,7 +461,7 @@ class Transducer(ASRModel):
                 <0: for decoding, use full chunk.
                 >0: for decoding, use fixed chunk size as set.
                 0: used for training, it's prohibited here
-            simulate_streaming (bool): whether do encoder forward in a
+            simulate_streaming (bool): whether do audio_encoder forward in a
                 streaming fashion
         Returns:
             List[List[int]]: best path result

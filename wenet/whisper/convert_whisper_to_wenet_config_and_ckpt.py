@@ -49,7 +49,7 @@ def convert_to_wenet_yaml(tokenizer, dims, wenet_yaml_path: str):
     assert dims['n_vocab'] == tokenizer.encoding.n_vocab, "{} v.s. {}".format(
         dims['n_vocab'], tokenizer.encoding.n_vocab)
 
-    configs['encoder'] = 'transformer'
+    configs['audio_encoder'] = 'transformer'
     configs['encoder_conf'] = {}
     configs['encoder_conf']['gradient_checkpointing'] = True
     configs['encoder_conf']['input_layer'] = 'conv1d2'
@@ -68,7 +68,7 @@ def convert_to_wenet_yaml(tokenizer, dims, wenet_yaml_path: str):
     configs['encoder_conf']['key_bias'] = False
     configs['encoder_conf']['activation_type'] = "gelu"
 
-    configs['decoder'] = 'transformer'
+    configs['context_decoder'] = 'transformer'
     configs['decoder_conf'] = {}
     configs['decoder_conf']['tie_word_embedding'] = True
     configs['decoder_conf']['gradient_checkpointing'] = True
@@ -196,11 +196,11 @@ def convert_to_wenet_state_dict(whisper_state_dict, wenet_state_dict_path):
     )
     for name in whisper_state_dict.keys():
         original_name = copy.deepcopy(name)
-        name = name.replace("encoder.conv1", "encoder.embed.conv.0")
-        name = name.replace("encoder.conv2", "encoder.embed.conv.2")
-        name = name.replace("decoder.token_embedding", "decoder.embed.0")
-        name = name.replace("encoder.blocks", "encoder.encoders")
-        name = name.replace("decoder.blocks", "decoder.decoders")
+        name = name.replace("audio_encoder.conv1", "audio_encoder.embed.conv.0")
+        name = name.replace("audio_encoder.conv2", "audio_encoder.embed.conv.2")
+        name = name.replace("context_decoder.token_embedding", "context_decoder.embed.0")
+        name = name.replace("audio_encoder.blocks", "audio_encoder.encoders")
+        name = name.replace("context_decoder.blocks", "context_decoder.decoders")
         name = name.replace(".cross_attn.query", ".src_attn.linear_q")
         name = name.replace(".cross_attn.key", ".src_attn.linear_k")
         name = name.replace(".cross_attn.value", ".src_attn.linear_v")
@@ -211,20 +211,20 @@ def convert_to_wenet_state_dict(whisper_state_dict, wenet_state_dict_path):
         name = name.replace(".attn.out", ".self_attn.linear_out")
         name = name.replace("mlp.0", "feed_forward.w_1")
         name = name.replace("mlp.2", "feed_forward.w_2")
-        if "decoder" in name:
+        if "context_decoder" in name:
             name = name.replace("cross_attn_ln", "norm2")
             name = name.replace("mlp_ln", "norm3")
         else:
             name = name.replace("mlp_ln", "norm2")
         name = name.replace("attn_ln", "norm1")
-        name = name.replace("encoder.ln_post", "encoder.after_norm")
-        name = name.replace("decoder.ln", "decoder.after_norm")
-        if original_name == "decoder.positional_embedding":
+        name = name.replace("audio_encoder.ln_post", "audio_encoder.after_norm")
+        name = name.replace("context_decoder.ln", "context_decoder.after_norm")
+        if original_name == "context_decoder.positional_embedding":
             whisper_state_dict[name] = whisper_state_dict[name].unsqueeze(0)
-            name = "decoder.embed.1.pe"
-        elif original_name == "encoder.positional_embedding":
+            name = "context_decoder.embed.1.pe"
+        elif original_name == "audio_encoder.positional_embedding":
             whisper_state_dict[name] = whisper_state_dict[name].unsqueeze(0)
-            name = "encoder.embed.pos_enc.pe"
+            name = "audio_encoder.embed.pos_enc.pe"
         print("name  {} ==> {}".format(original_name, name))
         print("type  {} ==> torch.float32".format(
             whisper_state_dict[original_name].dtype))

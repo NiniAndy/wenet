@@ -67,10 +67,10 @@ class SqueezeformerEncoder(nn.Module):
 
         Args:
             input_size to use_dynamic_chunk, see in Transformer BaseEncoder.
-            encoder_dim (int): The hidden dimension of encoder layer.
+            encoder_dim (int): The hidden dimension of audio_encoder layer.
             output_size (int): The output dimension of final projection layer.
             attention_heads (int): Num of attention head in attention module.
-            num_blocks (int): Num of encoder layers.
+            num_blocks (int): Num of audio_encoder layers.
             reduce_idx Optional[Union[int, List[int]]]:
                 reduce layer index, from 40ms to 80ms per frame.
             recover_idx Optional[Union[int, List[int]]]:
@@ -277,7 +277,7 @@ class SqueezeformerEncoder(nn.Module):
             xs (torch.Tensor): chunk input, with shape (b=1, time, mel-dim),
                 where `time == (chunk_size - 1) * subsample_rate + \
                         subsample.right_context + 1`
-            offset (int): current offset in encoder output time stamp
+            offset (int): current offset in audio_encoder output time stamp
             required_cache_size (int): cache size required for next chunk
                 compuation
                 >=0: actual cache size
@@ -415,7 +415,7 @@ class SqueezeformerEncoder(nn.Module):
         Here we should pay special attention to computation cache in the
         streaming style forward chunk by chunk. Three things should be taken
         into account for computation in the current network:
-            1. transformer/conformer encoder layers output cache
+            1. transformer/conformer audio_encoder layers output cache
             2. convolution in conformer
             3. convolution in subsampling
 

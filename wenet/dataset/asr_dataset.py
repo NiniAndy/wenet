@@ -23,12 +23,13 @@ from wenet.text.base_tokenizer import BaseTokenizer
 from wenet.utils.file_utils import read_symbol_table
 
 
-def Dataset(data_type,
-            data_list_file,
-            tokenizer: Optional[BaseTokenizer] = None,
-            conf=None,
-            partition=True,
-            **configs):
+def ASRDataset(
+        data_type,
+        data_list_file,
+        tokenizer: Optional[BaseTokenizer] = None,
+        dataset_conf=None,
+        partition=True,
+        **configs):
     """ Construct dataset from arguments
 
         We have two shuffle stage in the Dataset. The first is global
@@ -40,17 +41,16 @@ def Dataset(data_type,
             tokenizer (BaseTokenizer or None): tokenizer to tokenize
             partition(bool): whether to do data partition in terms of rank
     """
-    assert conf is not None
+    assert dataset_conf is not None
     assert data_type in ['raw', 'shard']
     # cycle dataset
-    cycle = conf.get('cycle', 1)
+    cycle = dataset_conf.get('cycle', 1)
     # stage1 shuffle: source
-    list_shuffle = conf.get('list_shuffle', True)
+    list_shuffle = dataset_conf.get('list_shuffle', True)
     list_shuffle_size = sys.maxsize
     if list_shuffle:
-        list_shuffle_conf = conf.get('list_shuffle_conf', {})
-        list_shuffle_size = list_shuffle_conf.get('shuffle_size',
-                                                  list_shuffle_size)
+        list_shuffle_conf = dataset_conf.get('list_shuffle_conf', {})
+        list_shuffle_size = list_shuffle_conf.get('shuffle_size', list_shuffle_size)
     if data_type == 'raw':
         dataset = WenetRawDatasetSource(data_list_file,
                                         partition=partition,
@@ -66,10 +66,10 @@ def Dataset(data_type,
                                              cycle=cycle)
     dataset = dataset.map_ignore_error(processor.decode_wav)
 
-    singal_channel_conf = conf.get('singal_channel_conf', {})
+    singal_channel_conf = dataset_conf.get('singal_channel_conf', {})
     dataset = dataset.map(partial(processor.singal_channel, **singal_channel_conf))
 
-    speaker_conf = conf.get('speaker_conf', None)
+    speaker_conf = dataset_conf.get('speaker_conf', None)
     if speaker_conf is not None:
         assert 'speaker_table_path' in speaker_conf
         speaker_table = read_symbol_table(speaker_conf['speaker_table_path'])
@@ -78,57 +78,57 @@ def Dataset(data_type,
     if tokenizer is not None:
         dataset = dataset.map(partial(processor.tokenize, tokenizer=tokenizer))
 
-    filter_conf = conf.get('filter_conf', {})
+    filter_conf = dataset_conf.get('filter_conf', {})
     dataset = dataset.filter(partial(processor.filter, **filter_conf))
 
-    resample_conf = conf.get('resample_conf', {})
+    resample_conf = dataset_conf.get('resample_conf', {})
     dataset = dataset.map(partial(processor.resample, **resample_conf))
 
-    speed_perturb = conf.get('speed_perturb', False)
+    speed_perturb = dataset_conf.get('speed_perturb', False)
     if speed_perturb:
         dataset = dataset.map(partial(processor.speed_perturb))
 
-    feats_type = conf.get('feats_type', 'fbank')
+    feats_type = dataset_conf.get('feats_type', 'fbank')
     assert feats_type in ['fbank', 'mfcc', 'log_mel_spectrogram']
     if feats_type == 'fbank':
-        fbank_conf = conf.get('fbank_conf', {})
+        fbank_conf = dataset_conf.get('fbank_conf', {})
         dataset = dataset.map(partial(processor.compute_fbank, **fbank_conf))
     elif feats_type == 'mfcc':
-        mfcc_conf = conf.get('mfcc_conf', {})
+        mfcc_conf = dataset_conf.get('mfcc_conf', {})
         dataset = dataset.map(partial(processor.compute_mfcc, **mfcc_conf))
     elif feats_type == 'log_mel_spectrogram':
-        log_mel_spectrogram_conf = conf.get('log_mel_spectrogram_conf', {})
+        log_mel_spectrogram_conf = dataset_conf.get('log_mel_spectrogram_conf', {})
         dataset = dataset.map(
             partial(processor.compute_log_mel_spectrogram,
                     **log_mel_spectrogram_conf))
-    spec_aug = conf.get('spec_aug', True)
-    spec_sub = conf.get('spec_sub', False)
-    spec_trim = conf.get('spec_trim', False)
+    spec_aug = dataset_conf.get('spec_aug', True)
+    spec_sub = dataset_conf.get('spec_sub', False)
+    spec_trim = dataset_conf.get('spec_trim', False)
     if spec_aug:
-        spec_aug_conf = conf.get('spec_aug_conf', {})
+        spec_aug_conf = dataset_conf.get('spec_aug_conf', {})
         dataset = dataset.map(partial(processor.spec_aug, **spec_aug_conf))
     if spec_sub:
-        spec_sub_conf = conf.get('spec_sub_conf', {})
+        spec_sub_conf = dataset_conf.get('spec_sub_conf', {})
         dataset = dataset.map(partial(processor.spec_sub, **spec_sub_conf))
     if spec_trim:
-        spec_trim_conf = conf.get('spec_trim_conf', {})
+        spec_trim_conf = dataset_conf.get('spec_trim_conf', {})
         dataset = dataset.map(partial(processor.spec_trim, **spec_trim_conf))
 
-    language_conf = conf.get('language_conf', {"limited_langs": ['zh', 'en']})
+    language_conf = dataset_conf.get('language_conf', {"limited_langs": ['zh', 'en']})
     dataset = dataset.map(partial(processor.detect_language, **language_conf))
     dataset = dataset.map(processor.detect_task)
 
-    shuffle = conf.get('shuffle', True)
+    shuffle = dataset_conf.get('shuffle', True)
     if shuffle:
-        shuffle_conf = conf.get('shuffle_conf', {})
+        shuffle_conf = dataset_conf.get('shuffle_conf', {})
         dataset = dataset.shuffle(buffer_size=shuffle_conf['shuffle_size'])
 
-    sort = conf.get('sort', True)
+    sort = dataset_conf.get('sort', True)
     if sort:
-        sort_conf = conf.get('sort_conf', {})
+        sort_conf = dataset_conf.get('sort_conf', {})
         dataset = dataset.sort(buffer_size=sort_conf['sort_size'], key_func=processor.sort_by_feats)
 
-    batch_conf = conf.get('batch_conf', {})
+    batch_conf = dataset_conf.get('batch_conf', {})
     batch_type = batch_conf.get('batch_type', 'static')
     assert batch_type in ['static', 'bucket', 'dynamic']
     if batch_type == 'static':

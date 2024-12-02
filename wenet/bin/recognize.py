@@ -23,7 +23,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from wenet.dataset.dataset import Dataset
+from wenet.dataset.asr_dataset import ASRDataset
 from wenet.utils.config import override_config
 from wenet.utils.init_model import init_model
 from wenet.utils.init_tokenizer import init_tokenizer
@@ -230,15 +230,9 @@ def main():
     test_conf['batch_conf']['batch_size'] = args.batch_size
 
     tokenizer = init_tokenizer(configs)
-    test_dataset = Dataset(args.data_type,
-                           args.test_data,
-                           tokenizer,
-                           test_conf,
-                           partition=False)
+    test_dataset = ASRDataset(args.data_type, args.test_data, tokenizer, test_conf, partition=False)
 
-    test_data_loader = DataLoader(test_dataset,
-                                  batch_size=None,
-                                  num_workers=args.num_workers)
+    test_data_loader = DataLoader(test_dataset, batch_size=None, num_workers=args.num_workers)
 
     # Init asr model from configs
     args.jit = False

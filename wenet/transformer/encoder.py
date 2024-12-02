@@ -66,7 +66,7 @@ class BaseEncoder(torch.nn.Module):
             attention_heads (int): the number of heads of multi head attention
             linear_units (int): the hidden units number of position-wise feed
                 forward
-            num_blocks (int): the number of decoder blocks
+            num_blocks (int): the number of context_decoder blocks
             dropout_rate (float): dropout rate
             attention_dropout_rate (float): dropout rate in attention
             positional_dropout_rate (float): dropout rate after adding
@@ -142,7 +142,7 @@ class BaseEncoder(torch.nn.Module):
                 >=0: use num_decoding_left_chunks
                 <0: use all left chunks
         Returns:
-            encoder output tensor xs, and subsampled masks
+            audio_encoder output tensor xs, and subsampled masks
             xs: padded output tensor (B, T' ~= T/subsample_rate, D)
             masks: torch.Tensor batch padding mask after subsample
                 (B, 1, T' ~= T/subsample_rate)
@@ -171,15 +171,14 @@ class BaseEncoder(torch.nn.Module):
         if self.use_sdpa:
             chunk_masks = mask_to_bias(chunk_masks, xs.dtype)
         if self.gradient_checkpointing and self.training:
-            xs = self.forward_layers_checkpointed(xs, chunk_masks, pos_emb,
-                                                  mask_pad)
+            xs = self.forward_layers_checkpointed(xs, chunk_masks, pos_emb, mask_pad)
         else:
             xs = self.forward_layers(xs, chunk_masks, pos_emb, mask_pad)
         if self.normalize_before:
             xs = self.after_norm(xs)
-        # Here we assume the mask is not changed in encoder layers, so just
-        # return the masks before encoder layers, and the masks will be used
-        # for cross attention with decoder later
+        # Here we assume the mask is not changed in audio_encoder layers, so just
+        # return the masks before audio_encoder layers, and the masks will be used
+        # for cross attention with context_decoder later
         return xs, masks
 
     def forward_layers(self, xs: torch.Tensor, chunk_masks: torch.Tensor,
@@ -218,7 +217,7 @@ class BaseEncoder(torch.nn.Module):
             xs (torch.Tensor): chunk input, with shape (b=1, time, mel-dim),
                 where `time == (chunk_size - 1) * subsample_rate + \
                         subsample.right_context + 1`
-            offset (int): current offset in encoder output time stamp
+            offset (int): current offset in audio_encoder output time stamp
             required_cache_size (int): cache size required for next chunk
                 compuation
                 >=0: actual cache size
@@ -313,7 +312,7 @@ class BaseEncoder(torch.nn.Module):
         Here we should pay special attention to computation cache in the
         streaming style forward chunk by chunk. Three things should be taken
         into account for computation in the current network:
-            1. transformer/conformer encoder layers output cache
+            1. transformer/conformer audio_encoder layers output cache
             2. convolution in conformer
             3. convolution in subsampling
 
@@ -365,7 +364,7 @@ class BaseEncoder(torch.nn.Module):
 
 
 class TransformerEncoder(BaseEncoder):
-    """Transformer encoder module."""
+    """Transformer audio_encoder module."""
 
     def __init__(
         self,
@@ -438,7 +437,7 @@ class TransformerEncoder(BaseEncoder):
 
 
 class ConformerEncoder(BaseEncoder):
-    """Conformer encoder module."""
+    """Conformer audio_encoder module."""
 
     def __init__(
         self,

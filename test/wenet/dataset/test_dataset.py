@@ -1,6 +1,6 @@
 import pytest
 import torch
-from wenet.dataset.dataset import Dataset
+from wenet.dataset.asr_dataset import ASRDataset
 from wenet.text.char_tokenizer import CharTokenizer
 
 
@@ -50,10 +50,7 @@ def test_dataset(params):
         'speed_perturb': False
     }
     tokenizer = CharTokenizer(unit_table)
-    dataset = Dataset(data_type,
-                      data_list,
-                      tokenizer=tokenizer,
-                      conf=dataset_conf)
+    dataset = ASRDataset(data_type, data_list, tokenizer=tokenizer, dataset_conf=dataset_conf)
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=None,
                                              num_workers=4,

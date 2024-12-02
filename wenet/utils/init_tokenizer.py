@@ -41,8 +41,7 @@ def init_tokenizer(configs) -> BaseTokenizer:
             configs['tokenizer_conf']['bpe_path'],
             configs['tokenizer_conf']['symbol_table_path'],
             configs['tokenizer_conf']['non_lang_syms_path'],
-            split_with_space=configs['tokenizer_conf'].get(
-                'split_with_space', False))
+            split_with_space=configs['tokenizer_conf'].get('split_with_space', False))
     elif tokenizer_type == 'paraformer':
         tokenizer = ParaformerTokenizer(
             symbol_table=configs['tokenizer_conf']['symbol_table_path'],
@@ -52,3 +51,13 @@ def init_tokenizer(configs) -> BaseTokenizer:
     logging.info("use {} tokenizer".format(configs["tokenizer"]))
 
     return tokenizer
+
+
+def init_pny_tokenizer(configs) -> BaseTokenizer:
+    pny_tokenizer = CharTokenizer(
+        configs['pny_tokenizer_conf']['symbol_table_path'],
+        configs['pny_tokenizer_conf']['non_lang_syms_path'],
+        split_with_space=configs['pny_tokenizer_conf'].get('split_with_space', False),
+        connect_symbol=configs['pny_tokenizer_conf'].get('connect_symbol', ''))
+    logging.info("use {} pny_tokenizer".format(configs["pny_tokenizer"]))
+    return pny_tokenizer

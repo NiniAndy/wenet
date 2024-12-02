@@ -80,7 +80,7 @@ class BestRQModel(torch.nn.Module):
         self.num_embeddings = num_embeddings
         self.features_regularization_weight = features_regularization_weight
 
-        # encoder
+        # audio_encoder
         self.encoder = encoder
         # n softmax
         self.encoder_top_n_out = torch.nn.parameter.Parameter(
@@ -116,7 +116,7 @@ class BestRQModel(torch.nn.Module):
         self.embeddings /= (self.embeddings.norm(dim=-1, p=2, keepdim=True) +
                             1e-8)
 
-        # force reset encoder papameter
+        # force reset audio_encoder papameter
         self.reset_encoder_parameter()
 
     def reset_encoder_parameter(self):

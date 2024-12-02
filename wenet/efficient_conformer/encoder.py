@@ -39,7 +39,7 @@ from wenet.utils.class_utils import (
 
 
 class EfficientConformerEncoder(torch.nn.Module):
-    """Conformer encoder module."""
+    """Conformer audio_encoder module."""
 
     def __init__(self,
                  input_size: int,
@@ -151,7 +151,7 @@ class EfficientConformerEncoder(torch.nn.Module):
         # convolution module definition
         convolution_layer = ConvolutionModule
 
-        # encoder definition
+        # audio_encoder definition
         index = 0
         layers = []
         for i in range(num_blocks):
@@ -261,7 +261,7 @@ class EfficientConformerEncoder(torch.nn.Module):
                 >=0: use num_decoding_left_chunks
                 <0: use all left chunks
         Returns:
-            encoder output tensor xs, and subsampled masks
+            audio_encoder output tensor xs, and subsampled masks
             xs: padded output tensor (B, T' ~= T/subsample_rate, D)
             masks: torch.Tensor batch padding mask after subsample
                 (B, 1, T' ~= T/subsample_rate)
@@ -292,9 +292,9 @@ class EfficientConformerEncoder(torch.nn.Module):
 
         if self.normalize_before:
             xs = self.after_norm(xs)
-        # Here we assume the mask is not changed in encoder layers, so just
-        # return the masks before encoder layers, and the masks will be used
-        # for cross attention with decoder later
+        # Here we assume the mask is not changed in audio_encoder layers, so just
+        # return the masks before audio_encoder layers, and the masks will be used
+        # for cross attention with context_decoder later
         return xs, masks
 
     def forward_chunk(
@@ -310,7 +310,7 @@ class EfficientConformerEncoder(torch.nn.Module):
 
         Args:
             xs (torch.Tensor): chunk input
-            offset (int): current offset in encoder output time stamp
+            offset (int): current offset in audio_encoder output time stamp
             required_cache_size (int): cache size required for next chunk
                 compuation
                 >=0: actual cache size
@@ -328,7 +328,7 @@ class EfficientConformerEncoder(torch.nn.Module):
         Returns:
             torch.Tensor: output of current input xs
             torch.Tensor: subsampling cache required for next chunk computation
-            List[torch.Tensor]: encoder layers output cache required for next
+            List[torch.Tensor]: audio_encoder layers output cache required for next
                 chunk computation
             List[torch.Tensor]: conformer cnn cache
 
@@ -456,7 +456,7 @@ class EfficientConformerEncoder(torch.nn.Module):
             chunk_real_len = real_len // self.embed.subsampling_rate // \
                 self.calculate_downsampling_factor(self.num_blocks + 1)
             # Keeping 1 more timestep can mitigate information leakage
-            #   from the encoder caused by the padding
+            #   from the audio_encoder caused by the padding
             xs = xs[:, :chunk_real_len + 1, :]
 
         return xs, r_att_cache, r_cnn_cache
@@ -473,7 +473,7 @@ class EfficientConformerEncoder(torch.nn.Module):
         Here we should pay special attention to computation cache in the
         streaming style forward chunk by chunk. Three things should be taken
         into account for computation in the current network:
-            1. transformer/conformer encoder layers output cache
+            1. transformer/conformer audio_encoder layers output cache
             2. convolution in conformer
             3. convolution in subsampling
 

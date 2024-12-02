@@ -21,7 +21,7 @@ export CUDA_VISIBLE_DEVICES="0"
 python3 test_onnx_throughput.py \
       --batch_sizes 1,4,16 \
       --sequence_lenghts 67 \
-      --onnxFile ./encoder.onnx \
+      --onnxFile ./audio_encoder.onnx \
       --model_type streaming_conformer_encoder \
       --log ./log.txt
 
@@ -72,7 +72,7 @@ def get_parser():
         choices=[
             "streaming_conformer_encoder",
             "conformer_encoder",
-            "decoder",
+            "context_decoder",
             "bidecoder",
         ],
         default="streaming_conformer_encoder",

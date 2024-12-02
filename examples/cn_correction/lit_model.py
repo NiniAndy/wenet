@@ -33,7 +33,7 @@ class LitModel(pl.LightningModule):
 
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         if local_rank == 0:
-            logging.info(f"{model_summary(model)}")
+            print (f"{model_summary(model)}")
 
         model, optimizer, scheduler = init_optimizer_and_scheduler(args, configs, model)
 

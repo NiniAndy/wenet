@@ -34,13 +34,13 @@ from wenet.utils.mask import (subsequent_mask, make_pad_mask)
 
 
 class TransformerDecoder(torch.nn.Module):
-    """Base class of Transfomer decoder module.
+    """Base class of Transfomer context_decoder module.
     Args:
         vocab_size: output dim
         encoder_output_size: dimension of attention
         attention_heads: the number of heads of multi head attention
         linear_units: the hidden units number of position-wise feedforward
-        num_blocks: the number of decoder blocks
+        num_blocks: the number of context_decoder blocks
         dropout_rate: dropout rate
         self_attention_dropout_rate: dropout rate for attention
         input_layer: input layer type
@@ -49,7 +49,7 @@ class TransformerDecoder(torch.nn.Module):
         normalize_before:
             True: use layer_norm before each sub-block of a layer.
             False: use layer_norm after each sub-block of a layer.
-        src_attention: if false, encoder-decoder cross attention is not
+        src_attention: if false, audio_encoder-context_decoder cross attention is not
                        applied, such as CIF model
         query_bias: whether use bias in attention.linear_q
         key_bias: whether use bias in attention.linear_k, False for whisper models.
@@ -151,21 +151,21 @@ class TransformerDecoder(torch.nn.Module):
         r_ys_in_pad: torch.Tensor = torch.empty(0),
         reverse_weight: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Forward decoder.
+        """Forward context_decoder.
         Args:
             memory: encoded memory, float32  (batch, maxlen_in, feat)
-            memory_mask: encoder memory mask, (batch, 1, maxlen_in)
+            memory_mask: audio_encoder memory mask, (batch, 1, maxlen_in)
             ys_in_pad: padded input token ids, int64 (batch, maxlen_out)
             ys_in_lens: input lengths of this batch (batch)
-            r_ys_in_pad: not used in transformer decoder, in order to unify api
-                with bidirectional decoder
-            reverse_weight: not used in transformer decoder, in order to unify
+            r_ys_in_pad: not used in transformer context_decoder, in order to unify api
+                with bidirectional context_decoder
+            reverse_weight: not used in transformer context_decoder, in order to unify
                 api with bidirectional decode
         Returns:
             (tuple): tuple containing:
                 x: decoded token score before softmax (batch, maxlen_out,
                     vocab_size) if use_output_layer is True,
-                torch.tensor(0.0), in order to unify api with bidirectional decoder
+                torch.tensor(0.0), in order to unify api with bidirectional context_decoder
                 olens: (batch, )
         NOTE(xcsong):
             We pass the `__call__` method of the modules instead of `forward` to the
@@ -311,14 +311,14 @@ class TransformerDecoder(torch.nn.Module):
 
 
 class BiTransformerDecoder(torch.nn.Module):
-    """Base class of Transfomer decoder module.
+    """Base class of Transfomer context_decoder module.
     Args:
         vocab_size: output dim
         encoder_output_size: dimension of attention
         attention_heads: the number of heads of multi head attention
         linear_units: the hidden units number of position-wise feedforward
-        num_blocks: the number of decoder blocks
-        r_num_blocks: the number of right to left decoder blocks
+        num_blocks: the number of context_decoder blocks
+        r_num_blocks: the number of right to left context_decoder blocks
         dropout_rate: dropout rate
         self_attention_dropout_rate: dropout rate for attention
         input_layer: input layer type
@@ -435,20 +435,20 @@ class BiTransformerDecoder(torch.nn.Module):
         r_ys_in_pad: torch.Tensor,
         reverse_weight: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Forward decoder.
+        """Forward context_decoder.
         Args:
             memory: encoded memory, float32  (batch, maxlen_in, feat)
-            memory_mask: encoder memory mask, (batch, 1, maxlen_in)
+            memory_mask: audio_encoder memory mask, (batch, 1, maxlen_in)
             ys_in_pad: padded input token ids, int64 (batch, maxlen_out)
             ys_in_lens: input lengths of this batch (batch)
             r_ys_in_pad: padded input token ids, int64 (batch, maxlen_out),
-                used for right to left decoder
-            reverse_weight: used for right to left decoder
+                used for right to left context_decoder
+            reverse_weight: used for right to left context_decoder
         Returns:
             (tuple): tuple containing:
                 x: decoded token score before softmax (batch, maxlen_out,
                     vocab_size) if use_output_layer is True,
-                r_x: x: decoded token score (right to left decoder)
+                r_x: x: decoded token score (right to left context_decoder)
                     before softmax (batch, maxlen_out, vocab_size)
                     if use_output_layer is True,
                 olens: (batch, )

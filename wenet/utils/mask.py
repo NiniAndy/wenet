@@ -21,13 +21,13 @@ def subsequent_mask(
 ) -> torch.Tensor:
     """Create mask for subsequent steps (size, size).
 
-    This mask is used only in decoder which works in an auto-regressive mode.
+    This mask is used only in context_decoder which works in an auto-regressive mode.
     This means the current step could only do attention with its left steps.
 
-    In encoder, fully attention is used when streaming is not necessary and
+    In audio_encoder, fully attention is used when streaming is not necessary and
     the sequence is not long. In this  case, no attention mask is needed.
 
-    When streaming is need, chunk-based attention is used in encoder. See
+    When streaming is need, chunk-based attention is used in audio_encoder. See
     subsequent_chunk_mask for the chunk-based attention mask.
 
     Args:
@@ -55,13 +55,13 @@ def subsequent_mask(
 ) -> torch.Tensor:
     """Create mask for subsequent steps (size, size).
 
-    This mask is used only in decoder which works in an auto-regressive mode.
+    This mask is used only in context_decoder which works in an auto-regressive mode.
     This means the current step could only do attention with its left steps.
 
-    In encoder, fully attention is used when streaming is not necessary and
+    In audio_encoder, fully attention is used when streaming is not necessary and
     the sequence is not long. In this  case, no attention mask is needed.
 
-    When streaming is need, chunk-based attention is used in encoder. See
+    When streaming is need, chunk-based attention is used in audio_encoder. See
     subsequent_chunk_mask for the chunk-based attention mask.
 
     Args:
@@ -92,7 +92,7 @@ def subsequent_chunk_mask(
         device: torch.device = torch.device("cpu"),
 ) -> torch.Tensor:
     """Create mask for subsequent steps (size, size) with chunk size,
-       this is for streaming encoder
+       this is for streaming audio_encoder
 
     Args:
         size (int): size of mask
@@ -132,7 +132,7 @@ def add_optional_chunk_mask(xs: torch.Tensor,
                             num_decoding_left_chunks: int,
                             enable_full_context: bool = True,
                             max_chunk_size: int = 25):
-    """ Apply optional mask for encoder.
+    """ Apply optional mask for audio_encoder.
 
     Args:
         xs (torch.Tensor): padded input, (B, L, D), L for max length
@@ -236,7 +236,7 @@ def make_non_pad_mask(lengths: torch.Tensor) -> torch.Tensor:
     block such as attention or convolution , this padding part is
     masked.
 
-    This pad_mask is used in both encoder and decoder.
+    This pad_mask is used in both audio_encoder and context_decoder.
 
     1 for non-padded part and 0 for padded part.
 
@@ -311,7 +311,7 @@ def causal_or_lookahead_mask(
     left_t_valid: int = 0,
 ) -> torch.Tensor:
     """Create mask (B, T, T) with history or future or both,
-       this is for causal or noncausal streaming encoder
+       this is for causal or noncausal streaming audio_encoder
 
     Args:
         mask (torch.Tensor): size of mask shape (B, 1, T)

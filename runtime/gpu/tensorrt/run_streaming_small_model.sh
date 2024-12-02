@@ -80,7 +80,7 @@ fi
 
 
 # if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
-#      echo "convert conformer encoder with layernorm plugin using multi-profile"
+#      echo "convert conformer audio_encoder with layernorm plugin using multi-profile"
 #      # profile1
 #      MIN_BATCH1=9
 #      OPT_BATCH1=16
@@ -109,7 +109,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
    python3 ../scripts/convert.py --config=$onnx_model_dir/train.yaml --vocab=$onnx_model_dir/words.txt \
         --model_repo=$model_repo_path --onnx_model_dir=$onnx_model_dir
 
-   cp $outputs_dir/encoder_fp16.plan $model_repo_path/encoder/1/
+   cp $outputs_dir/encoder_fp16.plan $model_repo_path/audio_encoder/1/
    cp $outputs_dir/LayerNorm.so $model_repo_path/../
 fi
 

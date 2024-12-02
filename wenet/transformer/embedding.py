@@ -48,11 +48,8 @@ class PositionalEncoding(torch.nn.Module):
         self.max_len = max_len
 
         pe = torch.zeros(self.max_len, self.d_model)
-        position = torch.arange(0, self.max_len,
-                                dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, self.d_model, 2, dtype=torch.float32) *
-            -(math.log(10000.0) / self.d_model))
+        position = torch.arange(0, self.max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, self.d_model, 2, dtype=torch.float32) * -(math.log(10000.0) / self.d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
@@ -148,7 +145,7 @@ class RelPositionalEncoding(PositionalEncoding):
 
 
 class WhisperPositionalEncoding(PositionalEncoding):
-    """ Sinusoids position encoding used in openai-whisper.encoder
+    """ Sinusoids position encoding used in openai-whisper.audio_encoder
     """
 
     def __init__(self, d_model: int, dropout_rate: float, max_len: int = 1500):
@@ -165,7 +162,7 @@ class WhisperPositionalEncoding(PositionalEncoding):
 
 
 class LearnablePositionalEncoding(PositionalEncoding):
-    """ Learnable position encoding used in openai-whisper.decoder
+    """ Learnable position encoding used in openai-whisper.context_decoder
     """
 
     def __init__(self, d_model: int, dropout_rate: float, max_len: int = 448):

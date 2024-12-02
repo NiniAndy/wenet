@@ -67,15 +67,15 @@ if __name__ == "__main__":
                         default=15,
                         choices=[15, 31],
                         help="kernel size for conv module")
-    # TODO: hard-coding below encoder decoder weight path, pls don't change it for now
+    # TODO: hard-coding below audio_encoder context_decoder weight path, pls don't change it for now
     parser.add_argument('--decoder_weight_path',
                         type=str,
                         default="/weight/dec/",
-                        help="decoder weights path")
+                        help="context_decoder weights path")
     parser.add_argument('--encoder_weight_path',
                         type=str,
                         default="/weight/enc/",
-                        help="encoder weights path")
+                        help="audio_encoder weights path")
     parser.add_argument('--useFP16',
                         type=bool,
                         default=True,
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     graph = gs.import_onnx(onnx_model)
     tmap = graph.tensors()
 
-    if 'encoder' in args.input_onnx:
+    if 'audio_encoder' in args.input_onnx:
         inputs = [tmap[i] for i in ["speech", "speech_lengths"]]
         outputs = [
             tmap[i]
@@ -119,7 +119,7 @@ if __name__ == "__main__":
             "q_scaling": args.q_scaling,
         }
 
-    elif 'decoder' in args.input_onnx:
+    elif 'context_decoder' in args.input_onnx:
         inputs = [
             tmap[i] for i in [
                 "hyps_pad_sos_eos", "hyps_lens_sos", "encoder_out",

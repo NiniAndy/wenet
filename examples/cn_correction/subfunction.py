@@ -5,8 +5,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from yacs.config import CfgNode as CN
 
-from examples.pt_deployment.data import MyDataModule
-from examples.pt_deployment.lit_model import LitModel
+from examples.cn_correction.data import MyDataModule
+from examples.cn_correction.lit_model import LitModel
 
 
 class CustomProgressBar(TQDMProgressBar):

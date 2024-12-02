@@ -199,7 +199,7 @@ class RelPositionMultiHeadedAttention(MultiHeadedAttention):
                                                  dim=-1)
             k = torch.cat([key_cache, k], dim=2)
             v = torch.cat([value_cache, v], dim=2)
-        # NOTE(xcsong): We do cache slicing in encoder.forward_chunk, since it's
+        # NOTE(xcsong): We do cache slicing in audio_encoder.forward_chunk, since it's
         #   non-trivial to calculate `next_cache_start` here.
         new_cache = torch.cat((k, v), dim=-1)
 

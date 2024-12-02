@@ -84,7 +84,7 @@ class ParaformerV2(ASRModel):
         text = batch['target'].to(device)
         text_lengths = batch['target_lengths'].to(device)
 
-        # 0 encoder
+        # 0 audio_encoder
         encoder_out, encoder_mask = self.encoder(speech, speech_lengths)
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
 
@@ -246,7 +246,7 @@ class ParaformerV2(ASRModel):
         decoding_chunk_size: int = -1,
         num_decoding_left_chunks: int = -1,
     ) -> Dict[str, torch.Tensor]:
-        # encoder
+        # audio_encoder
         encoder_out, encoder_out_mask = self._forward_encoder(speech, speech_lengths, decoding_chunk_size, num_decoding_left_chunks)
 
         batch_size = encoder_out.size(0)

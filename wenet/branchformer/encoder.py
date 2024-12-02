@@ -27,7 +27,7 @@ from wenet.utils.class_utils import (
 
 
 class BranchformerEncoder(BaseEncoder):
-    """Branchformer encoder module."""
+    """Branchformer audio_encoder module."""
 
     def __init__(
         self,

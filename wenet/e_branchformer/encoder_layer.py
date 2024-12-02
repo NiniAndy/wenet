@@ -24,7 +24,7 @@ from wenet.transformer.attention import T_CACHE
 
 
 class EBranchformerEncoderLayer(torch.nn.Module):
-    """E-Branchformer encoder layer module.
+    """E-Branchformer audio_encoder layer module.
 
     Args:
         size (int): model dimension

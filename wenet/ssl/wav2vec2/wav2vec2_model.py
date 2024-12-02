@@ -121,10 +121,10 @@ class Wav2vec2Model(torch.nn.Module):
         contrastive_logits_temperature: float = 0.1,
         diversity_weight: float = 0.0,
     ) -> None:
-        """ Wrap encoder to train using wav2vec2's style
+        """ Wrap audio_encoder to train using wav2vec2's style
 
         Args:
-            encoder: wenet's encoder,
+            encoder: wenet's audio_encoder,
                      only support conformer and transformer now
             embedding_dim: codebooks embedding dim
             num_embeddings: numbers of each codebook
@@ -151,7 +151,7 @@ class Wav2vec2Model(torch.nn.Module):
         self.features_regularization_weight = features_regularization_weight
         self.diversity_weight = diversity_weight
 
-        # encoder
+        # audio_encoder
         self.encoder = encoder
 
         # quantizer
@@ -235,7 +235,7 @@ class Wav2vec2Model(torch.nn.Module):
         unmasked_xs = xs
         # 2 mask features
         masked_xs, masked_masks = self._apply_mask(xs, masks.squeeze(1))
-        # 3 forward encoder blocks
+        # 3 forward audio_encoder blocks
         out, _ = self._forward_encoder_blocks(masked_xs, masks, pos_emb, masks)
 
         gumbel_temperature = max(
@@ -318,7 +318,7 @@ class Wav2vec2Model(torch.nn.Module):
             xs, masks, _, _ = layer(xs, xs_masks, pos_emb, mask_pad)
         if self.encoder.normalize_before:
             xs = self.encoder.after_norm(xs)
-        # Here we assume the mask is not changed in encoder layers, so just
-        # return the masks before encoder layers, and the masks will be used
-        # for cross attention with decoder later
+        # Here we assume the mask is not changed in audio_encoder layers, so just
+        # return the masks before audio_encoder layers, and the masks will be used
+        # for cross attention with context_decoder later
         return xs, masks

@@ -138,7 +138,7 @@ def test_model(model, audio_path):
     with torch.no_grad():
         _, dummy_tokens = tokenizer.tokenize("WeNet x OpenAI")
 
-        # 3. Forward whisper.encoder
+        # 3. Forward whisper.audio_encoder
         mel1 = whisper.log_mel_spectrogram(audio_path,
                                            whisper_model.dims.n_mels,
                                            padding=N_SAMPLES).unsqueeze(0)
@@ -195,7 +195,7 @@ def test_model(model, audio_path):
                                    rtol=1e-7,
                                    atol=1e-10)
 
-        # 4. Forward whisper.decoder
+        # 4. Forward whisper.context_decoder
         whisper_tokens = torch.tensor(
             list(tokenizer.tokenizer.sot_sequence) +
             [tokenizer.tokenizer.no_timestamps] + dummy_tokens,
@@ -284,7 +284,7 @@ def test_model(model, audio_path):
                                    rtol=1e-7,
                                    atol=1e-10)
 
-        # 5. Forward wenet.encoder
+        # 5. Forward wenet.audio_encoder
         waveform, sample_rate = torchaudio.load(audio_path)
         sample = {
             "wav": waveform,
@@ -302,12 +302,12 @@ def test_model(model, audio_path):
         T = wenet_mel.size(1)
         masks = ~make_pad_mask(torch.tensor([T], dtype=torch.long),
                                T).unsqueeze(1)  # (B=1, 1, T)
-        wenet_embed, pos_emb, masks = wenet_model.encoder.embed(
+        wenet_embed, pos_emb, masks = wenet_model.audio_encoder.embed(
             wenet_mel, masks)
         wenet_subed = wenet_embed - pos_emb
         x = wenet_embed
         wenet_layers_output = []
-        for i, layer in enumerate(wenet_model.encoder.encoders):
+        for i, layer in enumerate(wenet_model.audio_encoder.encoders):
             prev_x = x
             attn_ln_x = layer.norm1(x)
             wenet_layers_output.append({
@@ -354,9 +354,9 @@ def test_model(model, audio_path):
                                              masks)[0].numpy(),
                                        rtol=1e-7,
                                        atol=1e-10)
-        wenet_encoder_out = wenet_model.encoder.after_norm(x)
+        wenet_encoder_out = wenet_model.audio_encoder.after_norm(x)
 
-        # 6. Forward wenet.decoder
+        # 6. Forward wenet.context_decoder
         wenet_tokens, _ = add_whisper_tokens(
             configs['tokenizer_conf']['special_tokens'],
             torch.tensor([dummy_tokens], dtype=torch.long),
@@ -372,10 +372,10 @@ def test_model(model, audio_path):
                             device=tgt_mask.device).unsqueeze(0)  # (B=1, L, L)
         tgt_mask = tgt_mask & m  # (B=1, L, L)
         wenet_decoder_embed_posed, wenet_decoder_pos = \
-            wenet_model.decoder.embed(wenet_tokens)
+            wenet_model.context_decoder.embed(wenet_tokens)
         wenet_decoder_embed = wenet_decoder_embed_posed - wenet_decoder_pos
         x = wenet_decoder_embed_posed.clone()
-        for i, layer in enumerate(wenet_model.decoder.decoders):
+        for i, layer in enumerate(wenet_model.context_decoder.decoders):
             prev_x = x.clone()
             assert layer.normalize_before
             attn_ln_x = layer.norm1(x)
@@ -442,10 +442,10 @@ def test_model(model, audio_path):
                                              masks)[0].numpy(),
                                        rtol=1e-7,
                                        atol=1e-10)
-        assert wenet_model.decoder.normalize_before
-        x = wenet_model.decoder.after_norm(x)
-        assert wenet_model.decoder.use_output_layer
-        x = wenet_model.decoder.output_layer(x)
+        assert wenet_model.context_decoder.normalize_before
+        x = wenet_model.context_decoder.after_norm(x)
+        assert wenet_model.context_decoder.use_output_layer
+        x = wenet_model.context_decoder.output_layer(x)
         wenet_logits = x
 
     np.testing.assert_allclose(whisper_mel.numpy(),

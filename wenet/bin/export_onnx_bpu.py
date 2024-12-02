@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """NOTE(xcsong): Currently, we only support
-1. specific conformer encoder architecture, see:
-    encoder: conformer
+1. specific conformer audio_encoder architecture, see:
+    audio_encoder: conformer
     encoder_conf:
       activation_type: **must be** relu
       attention_heads: 2 or 4 or 8 or any number divisible by output_size
@@ -668,7 +668,7 @@ class BPUConformerEncoderLayer(torch.nn.Module):
 
 
 class BPUConformerEncoder(torch.nn.Module):
-    """Refactor wenet/transformer/encoder.py::ConformerEncoder
+    """Refactor wenet/transformer/audio_encoder.py::ConformerEncoder
     """
 
     def __init__(self, module, chunk_size, left_chunks, ln_run_on_bpu=False):
@@ -853,15 +853,15 @@ class BPUCTC(torch.nn.Module):
 
 
 def export_encoder(asr_model, args):
-    logger.info("Stage-1: export encoder")
+    logger.info("Stage-1: export audio_encoder")
     decode_window, mel_dim = args.decoding_window, args.feature_size
-    encoder = BPUConformerEncoder(asr_model.encoder, args.chunk_size,
+    encoder = BPUConformerEncoder(asr_model.audio_encoder, args.chunk_size,
                                   args.num_decoding_left_chunks,
                                   args.ln_run_on_bpu)
     encoder.eval()
-    encoder_outpath = os.path.join(args.output_dir, 'encoder.onnx')
+    encoder_outpath = os.path.join(args.output_dir, 'audio_encoder.onnx')
 
-    logger.info("Stage-1.1: prepare inputs for encoder")
+    logger.info("Stage-1.1: prepare inputs for audio_encoder")
     chunk = torch.randn((1, 1, decode_window, mel_dim))
     required_cache_size = encoder.chunk_size * encoder.left_chunks
     kv_time = required_cache_size + encoder.chunk_size
@@ -1055,10 +1055,10 @@ if __name__ == '__main__':
     print(model)
 
     args.feature_size = configs['input_dim']
-    args.output_size = model.encoder.output_size()
+    args.output_size = model.audio_encoder.output_size()
     args.decoding_window = (args.chunk_size - 1) * \
-        model.encoder.embed.subsampling_rate + \
-        model.encoder.embed.right_context + 1
+                           model.audio_encoder.embed.subsampling_rate + \
+                           model.audio_encoder.embed.right_context + 1
 
     export_encoder(model, args)
     export_ctc(model, args)

@@ -50,10 +50,10 @@ train_set=train_sp
 train_dev=dev
 recog_set=eval_$recog
 
-# pretrained w2v-conformer encoder
+# pretrained w2v-conformer audio_encoder
 enc_init=pretrain/conformer.pt
-#reinit last pretrained encoder layer: https://arxiv.org/pdf/2107.04734.pdf
-enc_init_mods='encoder.encoders.0,encoder.encoders.1,encoder.encoders.2,encoder.encoders.3,encoder.encoders.4,encoder.encoders.5,encoder.encoders.6,encoder.encoders.7,encoder.encoders.8,encoder.encoders.9,encoder.encoders.10,encoder.encoders.11,encoder.encoders.12,encoder.encoders.13,encoder.encoders.14,encoder.encoders.15,encoder.encoders.16,encoder.encoders.17,encoder.encoders.18,encoder.encoders.19,encoder.encoders.20,encoder.encoders.21,encoder.encoders.22,encoder.embed'
+#reinit last pretrained audio_encoder layer: https://arxiv.org/pdf/2107.04734.pdf
+enc_init_mods='audio_encoder.encoders.0,audio_encoder.encoders.1,audio_encoder.encoders.2,audio_encoder.encoders.3,audio_encoder.encoders.4,audio_encoder.encoders.5,audio_encoder.encoders.6,audio_encoder.encoders.7,audio_encoder.encoders.8,audio_encoder.encoders.9,audio_encoder.encoders.10,audio_encoder.encoders.11,audio_encoder.encoders.12,audio_encoder.encoders.13,audio_encoder.encoders.14,audio_encoder.encoders.15,audio_encoder.encoders.16,audio_encoder.encoders.17,audio_encoder.encoders.18,audio_encoder.encoders.19,audio_encoder.encoders.20,audio_encoder.encoders.21,audio_encoder.encoders.22,audio_encoder.embed'
 
 train_config=conf/train_conformer_large_10h.yaml
 checkpoint=

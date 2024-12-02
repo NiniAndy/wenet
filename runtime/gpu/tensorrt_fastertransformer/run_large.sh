@@ -77,16 +77,16 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
 
      mkdir -p /weight/enc_large
      mkdir -p /weight/dec_large
-     python3 extract_weights.py --input_onnx $onnx_model_dir/encoder.onnx --output_dir /weight/enc_large || exit 1
-     python3 extract_weights.py --input_onnx $onnx_model_dir/decoder.onnx --output_dir /weight/dec_large || exit 1
+     python3 extract_weights.py --input_onnx $onnx_model_dir/audio_encoder.onnx --output_dir /weight/enc_large || exit 1
+     python3 extract_weights.py --input_onnx $onnx_model_dir/context_decoder.onnx --output_dir /weight/dec_large || exit 1
 
-     python3 replace_plugin.py --input_onnx $onnx_model_dir/encoder.onnx \
+     python3 replace_plugin.py --input_onnx $onnx_model_dir/audio_encoder.onnx \
                                --use_layernorm_in_conv_module \
                                --encoder_weight_path /weight/enc_large/ \
                                --d_model $d_model --head_num $head_num --vocab_size $vocab_size \
                                --output_onnx ${outputs_dir}/encoder_plugin.onnx || exit 1
 
-     python3 replace_plugin.py --input_onnx $onnx_model_dir/decoder.onnx \
+     python3 replace_plugin.py --input_onnx $onnx_model_dir/context_decoder.onnx \
                                --decoder_weight_path /weight/dec_large/ \
                                --output_onnx ${outputs_dir}/decoder_plugin.onnx \
                                --d_model $d_model --head_num $head_num --vocab_size $vocab_size \
@@ -138,7 +138,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
           --maxShapes=speech:${MAX_BATCH}x${ENC_MAX_LEN}x80,speech_lengths:${MAX_BATCH} \
           --fp16 \
           --plugins=./libtrt_wenet.so \
-          --saveEngine=./encoder.plan
+          --saveEngine=./audio_encoder.plan
 
      ${trtexec}   \
           --onnx=./decoder_plugin.onnx \
@@ -147,7 +147,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
           --maxShapes=encoder_out:${MAX_BATCH}x${DEC_MAX_LEN}x$d_model,encoder_out_lens:${MAX_BATCH},hyps_pad_sos_eos:${MAX_BATCH}x${BEAM_SIZE}x${MAX_HYPS_PAD},hyps_lens_sos:${MAX_BATCH}x${BEAM_SIZE},ctc_score:${MAX_BATCH}x${BEAM_SIZE} \
           --fp16 \
           --plugins=./libtrt_wenet.so \
-          --saveEngine=./decoder.plan \
+          --saveEngine=./context_decoder.plan \
           --buildOnly
           # infer with random input would cause illegal memory access error
      cd -
@@ -195,11 +195,11 @@ fi
 
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
      echo "prepare files, you could skip it if you do it manually"
-     mkdir -p $model_repo_path/encoder/1/
-     cp $outputs_dir/encoder.plan $model_repo_path/encoder/1/
+     mkdir -p $model_repo_path/audio_encoder/1/
+     cp $outputs_dir/audio_encoder.plan $model_repo_path/audio_encoder/1/
 
-     mkdir -p $model_repo_path/decoder/1/
-     cp $outputs_dir/decoder.plan $model_repo_path/decoder/1/
+     mkdir -p $model_repo_path/context_decoder/1/
+     cp $outputs_dir/context_decoder.plan $model_repo_path/context_decoder/1/
 
      mkdir -p $model_repo_path/attention_rescoring/1/
 

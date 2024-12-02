@@ -16,6 +16,7 @@
 import copy
 import json
 import logging
+import warnings
 import os
 from contextlib import nullcontext
 from typing import List, Optional
@@ -64,12 +65,12 @@ def add_model_args(parser):
     parser.add_argument("--enc_init",
                         default=None,
                         type=str,
-                        help="Pre-trained model to initialize encoder")
+                        help="Pre-trained model to initialize audio_encoder")
     parser.add_argument(
         '--enc_init_mods',
-        default="encoder.",
+        default="audio_encoder.",
         type=lambda s: [str(mod) for mod in s.split(",") if s != ""],
-        help="List of encoder modules \
+        help="List of audio_encoder modules \
                         to initialize ,separated by a comma")
     parser.add_argument(
         '--freeze_modules',
@@ -134,7 +135,7 @@ def add_lora_args(parser):
                         LoRA-related prameters.")
     parser.add_argument(
         '--lora_modules',
-        default="encoder.encoders",
+        default="audio_encoder.encoders",
         type=lambda s: [str(mod) for mod in s.split(",") if s != ""],
         help='modules names needs inject lora',
     )
@@ -271,7 +272,7 @@ def init_distributed(args):
     return world_size, local_rank, rank
 
 
-def check_modify_and_save_config(args, configs, tokenizer):
+def check_modify_and_save_config(args, configs, tokenizer, **tokenizer_kwargs):
     if args.train_engine in ["torch_ddp", "torch_fsdp"]:
         if args.use_amp:
             configs["dtype"] = "fp16"
@@ -331,9 +332,15 @@ def check_modify_and_save_config(args, configs, tokenizer):
             input_dim = configs['dataset_conf']['fbank_conf']['num_mel_bins']
         elif 'log_mel_spectrogram_conf' in configs['dataset_conf']:
             input_dim = configs['dataset_conf']['log_mel_spectrogram_conf']['num_mel_bins']
-        else:
+        elif 'mfcc_conf' in configs['dataset_conf']:
             input_dim = configs['dataset_conf']['mfcc_conf']['num_mel_bins']
+        else:
+            logging.warn('Config input_dim is None !!!')
     configs['input_dim'] = input_dim
+
+    pny_tokenizer = tokenizer_kwargs.get('pny_tokenizer', None)
+    if pny_tokenizer is not None:
+        configs['pny_vocab_size'] = pny_tokenizer.vocab_size()
 
     configs, _ = get_blank_id(configs, tokenizer.symbol_table)
     configs['output_dim'] = configs.get('vocab_size', tokenizer.vocab_size())
@@ -358,30 +365,29 @@ def check_modify_and_save_config(args, configs, tokenizer):
     return configs
 
 
-def init_dataset_and_dataloader(args, configs, tokenizer, seed=777):
+def init_dataset_and_dataloader(args, configs, tokenizer_dict, seed=777,):
     generator = torch.Generator()
     generator.manual_seed(seed)
 
     # if save_interval in configs, steps mode else epoch mode
     if "save_interval" in configs:
         configs['dataset_conf']['cycle'] = configs.get('max_epoch', 100)
-    conf = configs['dataset_conf']
+
+    # conf = configs['dataset_conf']
     dataset_type = configs.get('dataset', 'asr')
+    tokenizer = tokenizer_dict['tokenizer']
+
+    configs["dataset"] = dataset_type
     configs['vocab_size'] = tokenizer.vocab_size()
-    train_dataset = init_dataset(dataset_type,
-                                 args.data_type,
-                                 args.train_data,
-                                 tokenizer,
-                                 conf,
-                                 True,
-                                 split='train')
-    cv_dataset = init_dataset(dataset_type,
-                              args.data_type,
-                              args.cv_data,
-                              tokenizer,
-                              conf,
-                              partition=False,
-                              split='cv')
+    configs["data_type"] = args.data_type
+    configs["train_data"] = args.train_data
+    configs["cv_data"] = args.cv_data
+
+    # train_dataset = init_dataset(dataset_type, args.data_type, args.train_data, tokenizer, conf, split='train')
+    # cv_dataset = init_dataset(dataset_type, args.data_type, args.cv_data, tokenizer, conf, partition=False, split='cv')
+
+    train_dataset = init_dataset(split='train', tokenizer_dict=tokenizer_dict, **configs)
+    cv_dataset = init_dataset(split='cv', partition=False, tokenizer_dict=tokenizer_dict, **configs)
 
     # NOTE(xcsong): Why we prefer persistent_workers=True ?
     #   https://discuss.pytorch.org/t/what-are-the-dis-advantages-of-persistent-workers/102110
@@ -405,8 +411,8 @@ def init_dataset_and_dataloader(args, configs, tokenizer, seed=777):
 def wrap_cuda_model(args, model, configs=None):
     local_world_size = int(os.environ.get('LOCAL_WORLD_SIZE', 1))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
-    if hasattr(model, 'encoder'):
-        grad_ckpt = getattr(model.encoder, 'gradient_checkpointing', False)
+    if hasattr(model, 'audio_encoder'):
+        grad_ckpt = getattr(model.audio_encoder, 'gradient_checkpointing', False)
     else:
         grad_ckpt = False
     if args.train_engine == "torch":  # native pytorch ddp

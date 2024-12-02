@@ -42,8 +42,8 @@ from wenet.utils.class_module import WENET_ENCODER_CLASSES, WENET_DECODER_CLASSE
 #     def __init__(
 #         self,
 #         vocab_size: int,
-#         encoder: BaseEncoder,
-#         decoder: TransformerDecoder,
+#         audio_encoder: BaseEncoder,
+#         context_decoder: TransformerDecoder,
 #         ctc: CTC,
 #         ctc_weight: float = 0.5,
 #         ignore_id: int = IGNORE_ID,
@@ -68,8 +68,8 @@ from wenet.utils.class_module import WENET_ENCODER_CLASSES, WENET_DECODER_CLASSE
 #         self.reverse_weight = reverse_weight
 #         self.apply_non_blank_embedding = apply_non_blank_embedding
 #
-#         self.encoder = encoder
-#         self.decoder = decoder
+#         self.audio_encoder = audio_encoder
+#         self.context_decoder = context_decoder
 #         self.ctc = ctc
 #         self.criterion_att = LabelSmoothingLoss(
 #             size=vocab_size,
@@ -93,7 +93,7 @@ class ASRModel(torch.nn.Module):
             ctc_conf: dict,
             cmvn: Optional[str] = None,
             cmvn_conf: Optional[dict] = None,
-            **kwargs: dict,
+            **kwargs,
     ):
 
         super().__init__()
@@ -177,8 +177,8 @@ class ASRModel(torch.nn.Module):
         else:
             loss_ctc, ctc_probs = None, None
 
-        # 2b. Attention-decoder branch
-        # use non blank (token level) embedding for decoder
+        # 2b. Attention-context_decoder branch
+        # use non blank (token level) embedding for context_decoder
         if self.apply_non_blank_embedding:
             assert self.ctc_weight != 0
             assert ctc_probs is not None
@@ -212,8 +212,7 @@ class ASRModel(torch.nn.Module):
             text: torch.Tensor,
             text_lengths: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
-        loss_ctc, ctc_probs = self.ctc(encoder_out, encoder_out_lens, text,
-                                       text_lengths)
+        loss_ctc, ctc_probs = self.ctc(encoder_out, encoder_out_lens, text, text_lengths)
         return loss_ctc, ctc_probs
 
     def filter_blank_embedding(
@@ -256,10 +255,10 @@ class ASRModel(torch.nn.Module):
                                             self.ignore_id)
         ys_in_lens = ys_pad_lens + 1
 
-        # reverse the seq, used for right to left decoder
+        # reverse the seq, used for right to left context_decoder
         r_ys_pad = reverse_pad_list(ys_pad, ys_pad_lens, float(self.ignore_id))
         r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos, self.ignore_id)
-        # 1. Forward decoder
+        # 1. Forward context_decoder
         decoder_out, r_decoder_out, _ = self.decoder(encoder_out, encoder_mask,
                                                      ys_in_pad, ys_in_lens,
                                                      r_ys_in_pad,
@@ -352,9 +351,9 @@ class ASRModel(torch.nn.Module):
                 <0: for decoding, use full chunk.
                 >0: for decoding, use fixed chunk size as set.
                 0: used for training, it's prohibited here
-            simulate_streaming (bool): whether do encoder forward in a
+            simulate_streaming (bool): whether do audio_encoder forward in a
                 streaming fashion
-            reverse_weight (float): right to left decoder weight
+            reverse_weight (float): right to left context_decoder weight
             ctc_weight (float): ctc score weight
 
         Returns: dict results of all decoding methods
@@ -436,7 +435,7 @@ class ASRModel(torch.nn.Module):
             xs (torch.Tensor): chunk input, with shape (b=1, time, mel-dim),
                 where `time == (chunk_size - 1) * subsample_rate + \
                         subsample.right_context + 1`
-            offset (int): current offset in encoder output time stamp
+            offset (int): current offset in audio_encoder output time stamp
             required_cache_size (int): cache size required for next chunk
                 compuation
                 >=0: actual cache size
@@ -468,7 +467,7 @@ class ASRModel(torch.nn.Module):
         """ Export interface for c++ call, apply linear transform and log
             softmax before ctc
         Args:
-            xs (torch.Tensor): encoder output
+            xs (torch.Tensor): audio_encoder output
 
         Returns:
             torch.Tensor: activation before ctc
@@ -480,7 +479,7 @@ class ASRModel(torch.nn.Module):
     def is_bidirectional_decoder(self) -> bool:
         """
         Returns:
-            torch.Tensor: decoder output
+            torch.Tensor: context_decoder output
         """
         if hasattr(self.decoder, 'right_decoder'):
             return True
@@ -495,20 +494,20 @@ class ASRModel(torch.nn.Module):
         encoder_out: torch.Tensor,
         reverse_weight: float = 0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Export interface for c++ call, forward decoder with multiple
-            hypothesis from ctc prefix beam search and one encoder output
+        """ Export interface for c++ call, forward context_decoder with multiple
+            hypothesis from ctc prefix beam search and one audio_encoder output
         Args:
             hyps (torch.Tensor): hyps from ctc prefix beam search, already
                 pad sos at the begining
             hyps_lens (torch.Tensor): length of each hyp in hyps
-            encoder_out (torch.Tensor): corresponding encoder output
+            encoder_out (torch.Tensor): corresponding audio_encoder output
             r_hyps (torch.Tensor): hyps from ctc prefix beam search, already
-                pad eos at the begining which is used fo right to left decoder
-            reverse_weight: used for verfing whether used right to left decoder,
+                pad eos at the begining which is used fo right to left context_decoder
+            reverse_weight: used for verfing whether used right to left context_decoder,
             > 0 will use.
 
         Returns:
-            torch.Tensor: decoder output
+            torch.Tensor: context_decoder output
         """
         assert encoder_out.size(0) == 1
         num_hyps = hyps.size(0)
@@ -520,7 +519,7 @@ class ASRModel(torch.nn.Module):
                                   dtype=torch.bool,
                                   device=encoder_out.device)
 
-        # input for right to left decoder
+        # input for right to left context_decoder
         # this hyps_lens has count <sos> token, we need minus it.
         r_hyps_lens = hyps_lens - 1
         # this hyps has included <sos> token, so it should be
@@ -578,7 +577,7 @@ class ASRModel(torch.nn.Module):
             reverse_weight)  # (num_hyps, max_hyps_len, vocab_size)
         decoder_out = torch.nn.functional.log_softmax(decoder_out, dim=-1)
 
-        # right to left decoder may be not used during decoding process,
+        # right to left context_decoder may be not used during decoding process,
         # which depends on reverse_weight param.
         # r_dccoder_out will be 0.0, if reverse_weight is 0.0
         r_decoder_out = torch.nn.functional.log_softmax(r_decoder_out, dim=-1)

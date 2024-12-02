@@ -118,7 +118,7 @@ class RivaWFSTDecoder:
             nbest_list, nbest_id_list, nbest_scores = [], [], []
             for sent in nbest_sentences:
                 # subtract 1 to get the label id,
-                # since fst decoder adds 1 to the label id
+                # since fst context_decoder adds 1 to the label id
                 hyp_ids = [label - 1 for label in sent.ilabels]
                 # padding for hyps_pad_sos_eos
                 new_hyp = [self.vocab_size - 1] + remove_duplicates_and_blank(

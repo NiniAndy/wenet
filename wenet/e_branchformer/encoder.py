@@ -31,7 +31,7 @@ from wenet.utils.class_utils import (
 
 
 class EBranchformerEncoder(ConformerEncoder):
-    """E-Branchformer encoder module."""
+    """E-Branchformer audio_encoder module."""
 
     def __init__(
         self,

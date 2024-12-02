@@ -38,13 +38,13 @@ class W2VBERTModel(torch.nn.Module):
         mlm_weight: float = 1.0,
         warmup_steps: int = 25000,
     ) -> None:
-        """ Wrap encoder to train using W2V-BERT's style
+        """ Wrap audio_encoder to train using W2V-BERT's style
 
         Described in:
         https://arxiv.org/pdf/2108.06209v2.pdf
 
         Args:
-            encoder: wenet's encoder,
+            encoder: wenet's audio_encoder,
                      only support conformer and transformer now
             embedding_dim: codebooks embedding dim
             num_embeddings: numbers of each codebook
@@ -79,7 +79,7 @@ class W2VBERTModel(torch.nn.Module):
         self.contrastive_weight = contrastive_weight
         self.mlm_weight = mlm_weight
         self.warmup_steps = warmup_steps
-        # encoder
+        # audio_encoder
         self.encoder = encoder
 
         # quantizer
@@ -102,7 +102,7 @@ class W2VBERTModel(torch.nn.Module):
 
         # NOET(Mddct): mask_em is replaced by random value in Wav-BERT
         # self.mask_emb = torch.nn.parameter.Parameter(
-        #     torch.empty(self.encoder.output_size()).uniform_(),
+        #     torch.empty(self.audio_encoder.output_size()).uniform_(),
         #     requires_grad=True,
         # )
         # TODO(Mddct): support causal or lookahead mask or keep consistent with
@@ -176,7 +176,7 @@ class W2VBERTModel(torch.nn.Module):
         unmasked_xs = xs
         # 2 mask features
         masked_xs, masked_masks = self._apply_mask(xs, masks.squeeze(1))
-        # 3 forward encoder blocks
+        # 3 forward audio_encoder blocks
         contrastive_vec, mlm_vec, out_mask = self._forward_encoder_blocks(
             masked_xs, masks, pos_emb, masks)
 
@@ -313,7 +313,7 @@ class W2VBERTModel(torch.nn.Module):
         if self.encoder.normalize_before:
             xs = self.encoder.after_norm(xs)
             masked_vec = xs
-        # Here we assume the mask is not changed in encoder layers, so just
-        # return the masks before encoder layers, and the masks will be used
-        # for cross attention with decoder later
+        # Here we assume the mask is not changed in audio_encoder layers, so just
+        # return the masks before audio_encoder layers, and the masks will be used
+        # for cross attention with context_decoder later
         return contrastive_vec, masked_vec, masks

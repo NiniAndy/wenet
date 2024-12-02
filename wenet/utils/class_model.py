@@ -10,6 +10,8 @@ from wenet.transducer.transducer import Transducer
 from wenet.transformer.asr_model import ASRModel
 from wenet.whisper.whisper import Whisper
 from wenet.paraformer.paraformer_V2 import ParaformerV2
+from wenet.cn_correction.text_bert import TextBert
+from wenet.text_speech_bimodal_asr.text_speech_asr import TextSpeechASR
 
 
 
@@ -22,4 +24,6 @@ WENET_MODEL_CLASSES = {
     'paraformer': Paraformer,
     'paraformerV2': ParaformerV2,
     'causal_llm': CausalLM,
+    'text_bert': TextBert,
+    'text_speech_asr': TextSpeechASR
 }

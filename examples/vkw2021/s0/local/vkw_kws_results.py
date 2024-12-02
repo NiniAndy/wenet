@@ -23,7 +23,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from wenet.dataset.dataset import Dataset
+from wenet.dataset.asr_dataset import ASRDataset
 from wenet.utils.init_model import init_model
 from wenet.utils.init_tokenizer import init_tokenizer
 
@@ -187,11 +187,7 @@ if __name__ == '__main__':
     cv_conf['spec_aug'] = False
 
     tokenizer = init_tokenizer(ali_conf, args.symbol_table, args.bpe_model)
-    cv_dataset = Dataset(args.data_type,
-                         args.input_data,
-                         tokenizer,
-                         cv_conf,
-                         partition=False)
+    cv_dataset = ASRDataset(args.data_type, args.input_data, tokenizer, cv_conf, partition=False)
 
     cv_data_loader = DataLoader(cv_dataset,
                                 batch_size=None,

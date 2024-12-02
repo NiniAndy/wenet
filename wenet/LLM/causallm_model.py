@@ -10,7 +10,7 @@ class CausalLM(torch.nn.Module):
 
     def __init__(
         self,
-        vocab_size: int,
+        output_dim: int,
         decoder: DecoderOnly,
         special_tokens: dict,
         tie_word_embedding: bool = False,
@@ -18,10 +18,12 @@ class CausalLM(torch.nn.Module):
         ignore_id: int = IGNORE_ID,
         lsm_weight: float = 0.0,
         reduction: str = 'mean',
+        **kwargs,
     ) -> None:
         super().__init__()
         del special_tokens
 
+        vocab_size = output_dim
         self.embed = torch.nn.Embedding(vocab_size, decoder.hidden_size)
         self.out = torch.nn.Linear(decoder.hidden_size,
                                    vocab_size,
