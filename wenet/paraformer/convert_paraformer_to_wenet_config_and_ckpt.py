@@ -99,9 +99,9 @@ def convert_to_wenet_tokenizer_conf(symbol_table_path, seg_dict, configs,
 def convert_to_wenet_yaml(configs, wenet_yaml_path: str,
                           fields_to_keep: List[str]) -> Dict:
     configs = _filter_dict_fields(configs, fields_to_keep)
-    configs['audio_encoder'] = 'sanm_encoder'
+    configs['encoder'] = 'sanm_encoder'
     configs['encoder_conf']['input_layer'] = 'paraformer_dummy'
-    configs['context_decoder'] = 'sanm_decoder'
+    configs['decoder'] = 'sanm_decoder'
     configs['lfr_conf'] = {'lfr_m': 7, 'lfr_n': 6}
 
     configs['input_dim'] = configs['lfr_conf']['lfr_m'] * 80
@@ -187,7 +187,7 @@ def convert_to_wenet_state_dict(args, wenet_model_path):
             wenet_name = wenet_name.replace('predictor.', 'predictor.tp_')
         elif wenet_name.startswith('predictor.blstm'):
             wenet_name = wenet_name.replace('predictor.', 'predictor.tp_')
-        elif wenet_name == 'context_decoder.embed.0.weight':
+        elif wenet_name == 'decoder.embed.0.weight':
             wenet_name = 'embed.weight'
 
         wenet_state_dict[wenet_name] = checkpoint[name].float()

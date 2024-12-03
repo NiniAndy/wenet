@@ -2,7 +2,7 @@ from wenet.transformer.embedding import WhisperPositionalEncoding
 
 
 class ParaformerPositinoalEncoding(WhisperPositionalEncoding):
-    """ Sinusoids position encoding used in paraformer.audio_encoder
+    """ Sinusoids position encoding used in paraformer.encoder
     """
 
     def __init__(self,

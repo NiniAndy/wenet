@@ -59,7 +59,7 @@ class ParaformerSANDecoder(TransformerDecoder):
             r_ys_in_pad: torch.Tensor = torch.empty(0),
             reverse_weight: float = 0.0,
     ):
-        """Forward context_decoder.
+        """Forward decoder.
 
         Args:
             hs_pad: encoded memory, float32  (batch, maxlen_in, feat)
@@ -159,7 +159,7 @@ class ParaformerV2SANDecoder(TransformerDecoder):
             r_ys_in_pad: torch.Tensor = torch.empty(0),
             reverse_weight: float = 0.0,
     ):
-        """Forward context_decoder.
+        """Forward decoder.
 
         Args:
             hs_pad: encoded memory, float32  (batch, maxlen_in, feat)
