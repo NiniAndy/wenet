@@ -79,7 +79,7 @@ class Whisper(ASRModel):
         cur_len = ys_in_pad.size(1)
         ys_in_lens = ys_pad_lens + cur_len - prev_len
 
-        # 1. Forward context_decoder
+        # 1. Forward decoder
         decoder_out, r_decoder_out, _ = self.decoder(encoder_out, encoder_mask,
                                                      ys_in_pad, ys_in_lens)
 

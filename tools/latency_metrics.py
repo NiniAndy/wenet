@@ -100,7 +100,7 @@ def main():
     load_checkpoint(model, args.ckpt)
     model = model.eval().to(device)
 
-    subsampling = model.audio_encoder.embed.subsampling_rate
+    subsampling = model.encoder.embed.subsampling_rate
     eos = model.eos_symbol()
 
     with open(args.wavscp, 'r') as fin:
@@ -132,9 +132,9 @@ def main():
         speech_lengths = torch.tensor([mat.size(0)]).to(device)
 
         # Let's assume batch_size = 1
-        encoder_out, encoder_mask = model.audio_encoder(speech, speech_lengths,
-                                                        args.chunk_size,
-                                                        args.left_chunks)
+        encoder_out, encoder_mask = model.encoder(speech, speech_lengths,
+                                                  args.chunk_size,
+                                                  args.left_chunks)
 
         maxlen = encoder_out.size(1)  # (B, maxlen, encoder_dim)
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)

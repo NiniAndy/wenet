@@ -64,7 +64,7 @@ if __name__ == "__main__":
     model_params["#output_size"] = configs["encoder_conf"]["output_size"]
     model_params["#encoder_output_size"] = model_params["#output_size"]
     model_params["#lm_path"] = args.lm_path
-    if configs["context_decoder"].startswith("bi"):
+    if configs["decoder"].startswith("bi"):
         model_params["#bidecoder"] = 1
     model_params["#vocabulary_path"] = args.vocab
     model_params["#vocab_size"] = configs["output_dim"]
@@ -92,11 +92,11 @@ if __name__ == "__main__":
 
     for model in os.listdir(args.model_repo):
         template = "config_template.pbtxt"
-        # non u2++ context_decoder
-        if "context_decoder" == model and model_params["#bidecoder"] == 0:
+        # non u2++ decoder
+        if "decoder" == model and model_params["#bidecoder"] == 0:
             template = "config_template2.pbtxt"
-        # streaming transformer audio_encoder
-        if "audio_encoder" == model and model_params.get("#cnn_module_cache",
+        # streaming transformer encoder
+        if "encoder" == model and model_params.get("#cnn_module_cache",
                                                    -1) == 0:
             template = "config_template2.pbtxt"
 
@@ -104,7 +104,7 @@ if __name__ == "__main__":
         out = os.path.join(model_dir, "config.pbtxt")
         out = open(out, "w")
 
-        if model in ("context_decoder", "audio_encoder"):
+        if model in ("decoder", "encoder"):
             if onnx_configs["fp16"]:
                 model_name = model + "_fp16.onnx"
             else:
@@ -113,9 +113,9 @@ if __name__ == "__main__":
             target_model = os.path.join(model_dir, "1", model + ".onnx")
             res = subprocess.call(["cp", source_model, target_model],
                                   shell=False)
-            if model == "audio_encoder":
+            if model == "encoder":
                 # currently, with torch 1.10, the
-                # exported conformer audio_encoder output size is -1
+                # exported conformer encoder output size is -1
                 # Solution: Please upgrade your torch version
                 # torch version >= 1.11.0 should fix this issue
                 model = onnx.load(source_model)

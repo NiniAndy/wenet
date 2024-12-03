@@ -262,7 +262,7 @@ class K2Model(ASRModel):
                                   encoder_out.size(1),
                                   dtype=torch.bool,
                                   device=device)
-        # used for right to left context_decoder
+        # used for right to left decoder
         r_hyps_pad = reverse_pad_list(ori_hyps_pad, hyps_lens, self.ignore_id)
         r_hyps_pad, _ = add_sos_eos(r_hyps_pad, self.sos, self.eos,
                                     self.ignore_id)
@@ -272,8 +272,8 @@ class K2Model(ASRModel):
             reverse_weight)  # (beam_size, max_hyps_len, vocab_size)
         decoder_out = torch.nn.functional.log_softmax(decoder_out, dim=-1)
         decoder_out = decoder_out
-        # r_decoder_out will be 0.0, if reverse_weight is 0.0 or context_decoder is a
-        # conventional transformer context_decoder.
+        # r_decoder_out will be 0.0, if reverse_weight is 0.0 or decoder is a
+        # conventional transformer decoder.
         r_decoder_out = torch.nn.functional.log_softmax(r_decoder_out, dim=-1)
         r_decoder_out = r_decoder_out
 

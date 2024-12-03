@@ -74,7 +74,7 @@ class PrefixBeamSearch():
         # !!!!    Experiments show that this strategy has little impact      !!!!
         for i in range(maxlen):
             # 3.1 building input
-            # context_decoder taking the last token to predict the next token
+            # decoder taking the last token to predict the next token
             input_hyp = [s.hyp[-1] for s in beam_init]
             input_hyp_tensor = torch.tensor(input_hyp,
                                             dtype=torch.int,
@@ -85,7 +85,7 @@ class PrefixBeamSearch():
             # build score tensor to do torch.add() function
             scores = torch.tensor([s.score for s in beam_init]).to(device)
 
-            # 3.2 forward context_decoder
+            # 3.2 forward decoder
             logp, new_cache = self.forward_decoder_one_step(
                 encoder_out[:, i, :].unsqueeze(1),
                 input_hyp_tensor,

@@ -49,7 +49,7 @@ train_set=train
 # 5. conf/train_u2++_conformer.yaml: U2++ conformer
 # 6. conf/train_u2++_transformer.yaml: U2++ transformer
 # 7. conf/train_u2++_conformer.yaml: U2++ lite conformer, must load a well
-#    trained model, and freeze audio_encoder module, otherwise there will be a
+#    trained model, and freeze encoder module, otherwise there will be a
 #    autograd error
 train_config=conf/train_conformer.yaml
 dir=exp/conformer

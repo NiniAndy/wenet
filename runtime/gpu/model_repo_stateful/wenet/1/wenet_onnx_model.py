@@ -302,7 +302,7 @@ class WenetModel(object):
         in5 = pb_utils.Tensor.from_dlpack("ctc_score", to_dlpack(ctc_score))
         input_tensors.append(in5)
         request = pb_utils.InferenceRequest(
-            model_name='context_decoder',
+            model_name='decoder',
             requested_output_names=['best_index'],
             inputs=input_tensors)
         response = request.exec()

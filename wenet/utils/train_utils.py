@@ -65,12 +65,12 @@ def add_model_args(parser):
     parser.add_argument("--enc_init",
                         default=None,
                         type=str,
-                        help="Pre-trained model to initialize audio_encoder")
+                        help="Pre-trained model to initialize encoder")
     parser.add_argument(
         '--enc_init_mods',
-        default="audio_encoder.",
+        default="encoder.",
         type=lambda s: [str(mod) for mod in s.split(",") if s != ""],
-        help="List of audio_encoder modules \
+        help="List of encoder modules \
                         to initialize ,separated by a comma")
     parser.add_argument(
         '--freeze_modules',
@@ -135,7 +135,7 @@ def add_lora_args(parser):
                         LoRA-related prameters.")
     parser.add_argument(
         '--lora_modules',
-        default="audio_encoder.encoders",
+        default="encoder.encoders",
         type=lambda s: [str(mod) for mod in s.split(",") if s != ""],
         help='modules names needs inject lora',
     )
@@ -411,8 +411,8 @@ def init_dataset_and_dataloader(args, configs, tokenizer_dict, seed=777,):
 def wrap_cuda_model(args, model, configs=None):
     local_world_size = int(os.environ.get('LOCAL_WORLD_SIZE', 1))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
-    if hasattr(model, 'audio_encoder'):
-        grad_ckpt = getattr(model.audio_encoder, 'gradient_checkpointing', False)
+    if hasattr(model, 'encoder'):
+        grad_ckpt = getattr(model.encoder, 'gradient_checkpointing', False)
     else:
         grad_ckpt = False
     if args.train_engine == "torch":  # native pytorch ddp
@@ -800,8 +800,8 @@ def log_per_step(writer, info_dict, timer: Optional[StepTimer] = None):
     accum_grad = info_dict.get('accum_grad', 1) if tag != "CV" else 1
     log_interval = info_dict.get('log_interval', 10)
     lrs = info_dict.get("lrs", [0.0])
-    is_gradient_accumulation_boundary = info_dict.get("is_gradient_accumulation_boundary", False)
-
+    is_gradient_accumulation_boundary = info_dict.get(
+        "is_gradient_accumulation_boundary", False)
 
     rank = int(os.environ.get('RANK', 0))
     # TRAIN Tensorboard

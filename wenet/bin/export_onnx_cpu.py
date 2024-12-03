@@ -322,14 +322,14 @@ def export_ctc(asr_model, args):
 
 
 def export_decoder(asr_model, args):
-    print("Stage-3: export context_decoder")
+    print("Stage-3: export decoder")
     decoder = asr_model
     # NOTE(lzhin): parameters of audio_encoder will be automatically removed
     #   since they are not used during rescoring.
     decoder.forward = decoder.forward_attention_decoder
-    decoder_outpath = os.path.join(args['output_dir'], 'context_decoder.onnx')
+    decoder_outpath = os.path.join(args['output_dir'], 'decoder.onnx')
 
-    print("\tStage-3.1: prepare inputs for context_decoder")
+    print("\tStage-3.1: prepare inputs for decoder")
     # hardcode time->200 nbest->10 len->20, they are dynamic axes.
     encoder_out = torch.randn((1, 200, args['output_size']))
     hyps = torch.randint(low=0, high=args['vocab_size'], size=[10, 20])
@@ -378,7 +378,7 @@ def export_decoder(asr_model, args):
     onnx.save(onnx_decoder, decoder_outpath)
     print_input_output_info(onnx_decoder, "onnx_decoder")
     model_fp32 = decoder_outpath
-    model_quant = os.path.join(args['output_dir'], 'context_decoder.quant.onnx')
+    model_quant = os.path.join(args['output_dir'], 'decoder.quant.onnx')
     quantize_dynamic(model_fp32, model_quant, weight_type=QuantType.QUInt8)
     print('\t\tExport onnx_decoder, done! see {}'.format(decoder_outpath))
 
@@ -445,7 +445,7 @@ def main():
                                    model.audio_encoder.embed.subsampling_rate + \
                                    model.audio_encoder.embed.right_context + 1 if args.chunk_size > 0 else 67
     arguments['audio_encoder'] = configs['audio_encoder']
-    arguments['context_decoder'] = configs['context_decoder']
+    arguments['decoder'] = configs['decoder']
     arguments['subsampling_rate'] = model.subsampling_rate()
     arguments['right_context'] = model.right_context()
     arguments['sos_symbol'] = model.sos_symbol()

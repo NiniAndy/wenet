@@ -31,14 +31,14 @@ from wenet.utils.class_model import WENET_MODEL_CLASSES
 #
 #     # if model_type in WENET_SSL_MODEL_CLASS.keys():
 #     #     from wenet.ssl.init_model import init_model as init_ssl_model
-#     #     model = init_ssl_model(configs, audio_encoder)
+#     #     model = init_ssl_model(configs, encoder)
 #
 #     return model, configs
 #
 #
 # def init_causal_llm(configs):
 #     vocab_size = configs['output_dim']
-#     assert configs['context_decoder'] == 'decoder_only'
+#     assert configs['decoder'] == 'decoder_only'
 #     assert configs['model'] == 'causal_lm'
 #     decoder_only = DecoderOnly(**configs['decoder_conf'])
 #

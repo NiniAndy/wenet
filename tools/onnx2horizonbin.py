@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """NOTE(xcsong): Currently, we only support
-1. specific conformer audio_encoder architecture, see:
-    audio_encoder: conformer
+1. specific conformer encoder architecture, see:
+    encoder: conformer
     encoder_conf:
       activation_type: **must be** relu
       attention_heads: 2 or 4 or 8 or any number divisible by output_size
@@ -320,7 +320,7 @@ compiler_parameters:
     cal_data_dir = os.path.join(output_dir, 'cal_data_dir')
     os.makedirs(cal_data_dir, exist_ok=True)
     enc_dic = enc_session.get_modelmeta().custom_metadata_map
-    enc_onnx_path = os.path.join(output_dir, 'audio_encoder.onnx')
+    enc_onnx_path = os.path.join(output_dir, 'encoder.onnx')
     enc_log_path = os.path.join(output_dir, 'hb_makertbin_output_encoder')
     enc_cal_data = ";".join(
         [cal_data_dir + "/" + x for x in enc_dic['input_name'].split(';')])
@@ -330,7 +330,7 @@ compiler_parameters:
     ctc_cal_data = ";".join(
         [cal_data_dir + "/" + x for x in ctc_dic['input_name'].split(';')])
     enc_config = template.format(
-        enc_onnx_path, "audio_encoder", enc_log_path, enc_dic['input_name'],
+        enc_onnx_path, "encoder", enc_log_path, enc_dic['input_name'],
         enc_dic['input_type'], enc_dic['input_layout_train'],
         enc_dic['input_shape'], enc_dic['norm_type'], enc_dic['input_type'],
         enc_dic['input_layout_rt'], enc_cal_data, args.calibration_type,
@@ -410,10 +410,10 @@ if __name__ == '__main__':
     model.eval()
 
     args.feature_size = configs['input_dim']
-    args.output_size = model.audio_encoder.output_size()
+    args.output_size = model.encoder.output_size()
     args.decoding_window = (args.chunk_size - 1) * \
-                           model.audio_encoder.embed.subsampling_rate + \
-                           model.audio_encoder.embed.right_context + 1
+        model.encoder.embed.subsampling_rate + \
+        model.encoder.embed.right_context + 1
 
     logger.info("Stage-1: Export onnx")
     enc, enc_session = export_encoder(model, args)
@@ -474,7 +474,7 @@ if __name__ == '__main__':
                   " && cd hb_makertbin_log_ctc &&" +
                   " hb_mapper makertbin --model-type \"onnx\" --config \"{}\"".
                   format(output_dir + "/config_ctc.yaml"))
-        logger.info("Stage-5: Make audio_encoder.bin")
+        logger.info("Stage-5: Make encoder.bin")
         os.system(
             "cd {} && mkdir -p hb_makertbin_log_encoder ".format(output_dir) +
             " && cd hb_makertbin_log_encoder &&" +

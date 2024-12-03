@@ -16,7 +16,7 @@ def convert_to_wenet_yaml(wenet_yaml_path: str):
     # whisper token nums
     configs['output_dim'] = 1024
 
-    configs['audio_encoder'] = 'conformer'
+    configs['encoder'] = 'conformer'
     configs['encoder_conf'] = {}
     configs['encoder_conf']['causal'] = True
     configs['encoder_conf']['gradient_checkpointing'] = True
@@ -39,9 +39,9 @@ def convert_to_wenet_yaml(wenet_yaml_path: str):
     configs['encoder_conf']['cnn_module_kernel'] = 31
     configs['encoder_conf']['cnn_module_norm'] = 'layer_norm'
 
-    # dummy context_decoder
-    # TODO(Mddct): To use whisper's context_decoder here
-    configs['context_decoder'] = 'transformer'
+    # dummy decoder
+    # TODO(Mddct): To use whisper's decoder here
+    configs['decoder'] = 'transformer'
     configs['decoder_conf'] = {}
     configs['decoder_conf']['attention_head'] = 16
     configs['decoder_conf']['linear_units'] = 4096
@@ -124,7 +124,7 @@ def convert_to_wenet_state_dict(w2vbert_conformer_state_dict,
     wenet_state_dict = {}
     for name in conformer_state_dict.keys():
         old_name = name
-        name = name.replace('audio_encoder.layers', 'audio_encoder.encoders')
+        name = name.replace('encoder.layers', 'encoder.encoders')
         name = name.replace("ffn1_layer_norm", "norm_ff_macaron")
         name = name.replace("self_attn_layer_norm", "norm_mha")
         name = name.replace("conv_layer_norm", "norm_conv")
@@ -147,9 +147,9 @@ def convert_to_wenet_state_dict(w2vbert_conformer_state_dict,
         name = name.replace("ffn2.inner_proj", "feed_forward.w_1")
         name = name.replace("ffn2.output_proj", "feed_forward.w_2")
         name = name.replace("encoder_frontend.model_dim_proj",
-                            "audio_encoder.embed.out")
+                            "encoder.embed.out")
         name = name.replace("encoder_frontend.post_extract_layer_norm",
-                            "audio_encoder.embed.norm")
+                            "encoder.embed.norm")
         name = name.replace(".layer_norm.", ".norm_final.")
         wenet_state_dict[name] = conformer_state_dict[old_name]
 

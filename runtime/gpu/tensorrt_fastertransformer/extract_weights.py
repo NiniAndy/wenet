@@ -33,7 +33,7 @@ def export_GetAllWeight(model, gsg):
     exported_name = list()
     res = dict()
     for w in model.graph.initializer:
-        if 'audio_encoder' in str(w.name) or 'ctc' in str(w.name):
+        if 'encoder' in str(w.name) or 'ctc' in str(w.name):
             print("export ", w.name, w.dims, w.data_type)
             dtype = utils.onnx2np_type(w.data_type)
             res[w.name] = np.frombuffer(w.raw_data,
@@ -62,7 +62,7 @@ def export_GetAllWeight(model, gsg):
             for node in gsg.nodes:
                 if node.op == "MatMul" and node.i(0, 0).op == "Slice" \
                    and node.inputs[1].name == w.name:
-                    new_name = "audio_encoder.encoders." + \
+                    new_name = "encoder.encoders." + \
                         str(cur_idx) + ".self_attn.linear_pos.weight"
                     print("export ", w.name, w.dims, w.data_type, " -> ",
                           new_name)
@@ -82,7 +82,7 @@ def export_GetAllWeight(model, gsg):
             for node in gsg.nodes:
                 if node.op == "Conv" and len(node.inputs) == 3 \
                    and node.inputs[1].name == w.name:
-                    new_name = "audio_encoder.encoders." + \
+                    new_name = "encoder.encoders." + \
                         str(cur_idx) + ".conv_module.depthwise_conv.weight"
                     print("export ", w.name, w.dims, w.data_type, " -> ",
                           new_name)
@@ -93,7 +93,7 @@ def export_GetAllWeight(model, gsg):
 
                     bname = node.inputs[2].name
                     w = utils.onnx_GetWeight(model, bname)
-                    new_name = "audio_encoder.encoders." + \
+                    new_name = "encoder.encoders." + \
                         str(cur_idx) + ".conv_module.depthwise_conv.bias"
                     print("export ", w.name, w.dims, w.data_type, " -> ",
                           new_name)
@@ -108,12 +108,12 @@ def export_GetAllWeight(model, gsg):
             pnode = node.i(0, 0)
             print(node.name)
             w = pnode.attrs["value"]
-            new_name = "audio_encoder.positional.encoding.data"
+            new_name = "encoder.positional.encoding.data"
             print("export ", w.name, w.shape, w.dtype, " -> ", new_name)
             print(type(w.values))
             res[new_name] = w.values
 
-    assert "audio_encoder.positional.encoding.data" in res
+    assert "encoder.positional.encoding.data" in res
 
     return res
 
@@ -147,7 +147,7 @@ def export_decoder_GetAllWeight(model, gsg):
             pnode = node.i(0, 0)
             w = pnode.attrs["value"]
             print(w.values, w.values.shape)
-            new_name = "context_decoder.positional.encoding.data"
+            new_name = "decoder.positional.encoding.data"
             print("export ", w.name, w.shape, w.dtype, " -> ", new_name)
             print(type(w.values))
             res[new_name] = w.values
@@ -179,10 +179,10 @@ if __name__ == "__main__":
     onnx_model = onnx.load(args.input_onnx)
     graph = gs.import_onnx(onnx_model)
 
-    if 'audio_encoder' in args.input_onnx:
+    if 'encoder' in args.input_onnx:
         result = export_GetAllWeight(onnx_model, graph)
 
-    elif 'context_decoder' in args.input_onnx:
+    elif 'decoder' in args.input_onnx:
         result = export_decoder_GetAllWeight(onnx_model, graph)
 
     else:
@@ -192,7 +192,7 @@ if __name__ == "__main__":
         saved_path = args.output_dir + "/" + name + ".bin"
         cur = result[name]
         if name.endswith(".weight") and len(cur.shape) == 2 \
-           and "context_decoder.embed.0.weight" not in name:
+           and "decoder.embed.0.weight" not in name:
             cur = cur.transpose((1, 0))
 
         if name.endswith(".pointwise_conv1.weight"):

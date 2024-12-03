@@ -26,9 +26,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-This script is for testing exported onnx audio_encoder and context_decoder from
+This script is for testing exported onnx audio_encoder and decoder from
 export_onnx_gpu.py. The exported onnx models only support batch offline ASR inference.
-It requires a python wrapped c++ ctc context_decoder.
+It requires a python wrapped c++ ctc decoder.
 Please install it by following:
 https://github.com/Slyne/ctc_decoder.git
 """
@@ -80,7 +80,7 @@ def get_args():
                         help='audio_encoder onnx file')
     parser.add_argument('--decoder_onnx',
                         required=True,
-                        help='context_decoder onnx file')
+                        help='decoder onnx file')
     parser.add_argument('--result_file', required=True, help='asr result file')
     parser.add_argument('--batch_size',
                         type=int,

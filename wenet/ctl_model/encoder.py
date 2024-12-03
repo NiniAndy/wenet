@@ -24,7 +24,7 @@ from wenet.transformer.encoder import TransformerEncoder, ConformerEncoder
 
 
 class DualTransformerEncoder(TransformerEncoder):
-    """Transformer audio_encoder module."""
+    """Transformer encoder module."""
 
     def __init__(
         self,
@@ -94,7 +94,7 @@ class DualTransformerEncoder(TransformerEncoder):
 
 
 class DualConformerEncoder(ConformerEncoder):
-    """Conformer audio_encoder module."""
+    """Conformer encoder module."""
 
     def __init__(
         self,

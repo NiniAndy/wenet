@@ -993,7 +993,7 @@ def export_rescoring_decoder(model, configs, args, logger, decoder_onnx_path,
     bz, seq_len = 32, 100
     beam_size = args.beam_size
     decoder = Decoder(
-        model.context_decoder,
+        model.decoder,
         model.ctc_weight,
         model.reverse_weight,
         beam_size,
@@ -1104,17 +1104,17 @@ def export_rescoring_decoder(model, configs, args, logger, decoder_onnx_path,
 
     # if model.reverse weight == 0,
     # the r_hyps_pad will be removed
-    # from the onnx context_decoder since it doen't play any role
+    # from the onnx decoder since it doen't play any role
     if model.reverse_weight == 0:
         del ort_inputs["r_hyps_pad_sos_eos"]
     ort_outs = ort_session.run(None, ort_inputs)
 
-    # check context_decoder output
+    # check decoder output
     if decoder_fastertransformer:
         test(to_numpy(o0), ort_outs, rtol=1e-03, atol=1e-05)
     else:
         test(to_numpy([o0]), ort_outs, rtol=1e-03, atol=1e-05)
-    logger.info("export to onnx context_decoder succeed!")
+    logger.info("export to onnx decoder succeed!")
 
 
 if __name__ == "__main__":
@@ -1153,7 +1153,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_onnx_dir",
         default="onnx_model",
-        help="output onnx audio_encoder and context_decoder directory",
+        help="output onnx audio_encoder and decoder directory",
     )
     parser.add_argument(
         "--fp16",
@@ -1231,7 +1231,7 @@ if __name__ == "__main__":
     onnx_config = export_enc_func(model, configs, args, logger,
                                   encoder_onnx_path)
 
-    decoder_onnx_path = os.path.join(args.output_onnx_dir, "context_decoder.onnx")
+    decoder_onnx_path = os.path.join(args.output_onnx_dir, "decoder.onnx")
     export_rescoring_decoder(
         model,
         configs,

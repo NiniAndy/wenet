@@ -83,17 +83,17 @@ def fsdp_save_model(model, save_model_path, info_dict):
 
 def check_gradient_checkpoint(model):
     ckpt_laye_types = []
-    if hasattr(model, 'audio_encoder') and hasattr(model.audio_encoder,
+    if hasattr(model, 'encoder') and hasattr(model.encoder,
                                              'gradient_checkpointing'):
-        if model.audio_encoder.gradient_checkpointing:
-            model.audio_encoder.gradient_checkpointing = False
+        if model.encoder.gradient_checkpointing:
+            model.encoder.gradient_checkpointing = False
             ckpt_laye_types += list(WENET_ENCODER_LAYERS_CLASSES.values())
-    if hasattr(model, 'context_decoder') and hasattr(model.context_decoder,
+    if hasattr(model, 'decoder') and hasattr(model.decoder,
                                              'gradient_checkpointing'):
-        if model.context_decoder.gradient_checkpointing:
-            model.context_decoder.gradient_checkpointing = False
+        if model.decoder.gradient_checkpointing:
+            model.decoder.gradient_checkpointing = False
             ckpt_laye_types += list(WENET_DECODER_LAYERS_CLASSES.values())
-            if isinstance(model.context_decoder, DecoderOnly):
+            if isinstance(model.decoder, DecoderOnly):
                 ckpt_laye_types += [DecoderOnly]
     return tuple(ckpt_laye_types)
 

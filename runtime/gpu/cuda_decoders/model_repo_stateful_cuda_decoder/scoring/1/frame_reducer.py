@@ -54,10 +54,10 @@ def make_pad_mask(lengths: torch.Tensor, max_len: int = 0) -> torch.Tensor:
 
 
 class FrameReducer(nn.Module):
-    """The audio_encoder output is first used to calculate
+    """The encoder output is first used to calculate
     the CTC posterior probability; then for each output frame,
     if its blank posterior is bigger than some thresholds,
-    it will be simply discarded from the audio_encoder output.
+    it will be simply discarded from the encoder output.
     """
 
     def __init__(
@@ -78,7 +78,7 @@ class FrameReducer(nn.Module):
         """
         Args:
             x:
-              The shared audio_encoder output with shape [N, T, C].
+              The shared encoder output with shape [N, T, C].
             x_lens:
               A tensor of shape (batch_size,) containing the number of frames in
               `x` before padding.
@@ -91,7 +91,7 @@ class FrameReducer(nn.Module):
               The blank id of ctc_output.
         Returns:
             out:
-              The frame reduced audio_encoder output with shape [N, T', C].
+              The frame reduced encoder output with shape [N, T', C].
             out_lens:
               A tensor of shape (batch_size,) containing the number of frames in
               `out` before padding.
