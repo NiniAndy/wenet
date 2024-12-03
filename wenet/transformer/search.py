@@ -305,7 +305,7 @@ def attention_beam_search(
             hyps_mask = mask_to_bias(hyps_mask, encoder_out.dtype)
         # logp: (B*N, vocab)
         logp = model.decoder.forward_one_step(encoder_out, encoder_mask, hyps,
-                                                      hyps_mask, cache)
+                                              hyps_mask, cache)
         # 2.2 First beam prune: select topk best prob at current time
         top_k_logp, top_k_index = logp.topk(beam_size)  # (B*N, N)
         top_k_logp = mask_finished_scores(top_k_logp, end_flag)

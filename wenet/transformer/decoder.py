@@ -211,7 +211,7 @@ class TransformerDecoder(torch.nn.Module):
             tgt_mask: torch.Tensor,
             memory: torch.Tensor,
             memory_mask: torch.Tensor,
-            return_layers_output=False) -> torch.Tensor:
+            return_layers_output=False):
 
         x_dict = {}
         for i, layer in enumerate(self.decoders):
@@ -227,7 +227,7 @@ class TransformerDecoder(torch.nn.Module):
             tgt_mask: torch.Tensor,
             memory: torch.Tensor,
             memory_mask: torch.Tensor,
-            return_layers_output=False  ) -> torch.Tensor:
+            return_layers_output=False  ):
         x_dict = {}
         for i, layer in enumerate(self.decoders):
             x, tgt_mask, memory, memory_mask = ckpt.checkpoint(

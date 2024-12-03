@@ -310,7 +310,7 @@ class ASRModel(torch.nn.Module):
                 <0: for decoding, use full chunk.
                 >0: for decoding, use fixed chunk size as set.
                 0: used for training, it's prohibited here
-            simulate_streaming (bool): whether do audio_encoder forward in a
+            simulate_streaming (bool): whether do encoder forward in a
                 streaming fashion
             reverse_weight (float): right to left decoder weight
             ctc_weight (float): ctc score weight
@@ -394,7 +394,7 @@ class ASRModel(torch.nn.Module):
             xs (torch.Tensor): chunk input, with shape (b=1, time, mel-dim),
                 where `time == (chunk_size - 1) * subsample_rate + \
                         subsample.right_context + 1`
-            offset (int): current offset in audio_encoder output time stamp
+            offset (int): current offset in encoder output time stamp
             required_cache_size (int): cache size required for next chunk
                 compuation
                 >=0: actual cache size
@@ -426,7 +426,7 @@ class ASRModel(torch.nn.Module):
         """ Export interface for c++ call, apply linear transform and log
             softmax before ctc
         Args:
-            xs (torch.Tensor): audio_encoder output
+            xs (torch.Tensor): encoder output
 
         Returns:
             torch.Tensor: activation before ctc
@@ -454,12 +454,12 @@ class ASRModel(torch.nn.Module):
         reverse_weight: float = 0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """ Export interface for c++ call, forward decoder with multiple
-            hypothesis from ctc prefix beam search and one audio_encoder output
+            hypothesis from ctc prefix beam search and one encoder output
         Args:
             hyps (torch.Tensor): hyps from ctc prefix beam search, already
                 pad sos at the begining
             hyps_lens (torch.Tensor): length of each hyp in hyps
-            encoder_out (torch.Tensor): corresponding audio_encoder output
+            encoder_out (torch.Tensor): corresponding encoder output
             r_hyps (torch.Tensor): hyps from ctc prefix beam search, already
                 pad eos at the begining which is used fo right to left decoder
             reverse_weight: used for verfing whether used right to left decoder,

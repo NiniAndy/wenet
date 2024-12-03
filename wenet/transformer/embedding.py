@@ -145,7 +145,7 @@ class RelPositionalEncoding(PositionalEncoding):
 
 
 class WhisperPositionalEncoding(PositionalEncoding):
-    """ Sinusoids position encoding used in openai-whisper.audio_encoder
+    """ Sinusoids position encoding used in openai-whisper.encoder
     """
 
     def __init__(self, d_model: int, dropout_rate: float, max_len: int = 1500):
