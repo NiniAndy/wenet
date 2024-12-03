@@ -289,7 +289,7 @@ def attention_beam_search(
         'self_att_cache': {},
         'cross_att_cache': {},
     }
-    if model.context_decoder.use_sdpa:
+    if model.decoder.use_sdpa:
         encoder_mask = mask_to_bias(encoder_mask, encoder_out.dtype)
     if hasattr(model, 'decode_maxlen'):
         maxlen = model.decode_maxlen
@@ -298,13 +298,13 @@ def attention_beam_search(
         # Stop if all batch and all beam produce eos
         if end_flag.sum() == running_size:
             break
-        # 2.1 Forward context_decoder step
+        # 2.1 Forward decoder step
         hyps_mask = subsequent_mask(i).unsqueeze(0).repeat(
             running_size, 1, 1).to(device)  # (B*N, i, i)
-        if model.context_decoder.use_sdpa:
+        if model.decoder.use_sdpa:
             hyps_mask = mask_to_bias(hyps_mask, encoder_out.dtype)
         # logp: (B*N, vocab)
-        logp = model.context_decoder.forward_one_step(encoder_out, encoder_mask, hyps,
+        logp = model.decoder.forward_one_step(encoder_out, encoder_mask, hyps,
                                                       hyps_mask, cache)
         # 2.2 First beam prune: select topk best prob at current time
         top_k_logp, top_k_index = logp.topk(beam_size)  # (B*N, N)
@@ -414,7 +414,7 @@ def attention_rescoring(
             prefix_len = 1
         decoder_out, r_decoder_out = model.forward_attention_decoder(
             hyps_pad, hyps_lens, encoder_out, reverse_weight)
-        # Only use context_decoder score for rescoring
+        # Only use decoder score for rescoring
         best_score = -float('inf')
         best_index = 0
         confidences = []
@@ -427,7 +427,7 @@ def attention_rescoring(
                 score += s
                 tc.append(math.exp(s))
             score += decoder_out[i][len(hyp) + (prefix_len - 1)][eos]
-            # add right to left context_decoder score
+            # add right to left decoder score
             if reverse_weight > 0 and r_decoder_out.dim() > 0:
                 r_score = 0.0
                 for j, w in enumerate(hyp):

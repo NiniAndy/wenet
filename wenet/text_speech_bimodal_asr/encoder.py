@@ -30,7 +30,7 @@ from wenet.utils.class_utils import (
 from wenet.utils.mask import make_pad_mask
 
 
-class TextBertEncoder(torch.nn.Module):
+class ContextEncoder(torch.nn.Module):
 
     def __init__(
             self,
@@ -75,6 +75,16 @@ class TextBertEncoder(torch.nn.Module):
             pos_emb_class(output_size, positional_dropout_rate)
             if pos_enc_layer_type != 'rope_pos' else pos_emb_class(output_size, output_size // attention_heads, positional_dropout_rate))
 
+        pos_projs_class = WENET_EMB_CLASSES["no_pos"]
+        proj = WENET_SUBSAMPLE_CLASSES[input_layer](
+            input_size,
+            output_size,
+            0.0,
+            pos_projs_class(output_size, positional_dropout_rate)
+           )
+
+        self.projs = torch.nn.ModuleList([proj for _ in range(num_blocks)])
+
         assert layer_norm_type in ['layer_norm', 'rms_norm']
         self.normalize_before = normalize_before
         self.after_norm = WENET_NORM_CLASSES[layer_norm_type](output_size, eps=norm_eps)
@@ -116,17 +126,18 @@ class TextBertEncoder(torch.nn.Module):
             self,
             xs: torch.Tensor,
             xs_lens: torch.Tensor,
+            combine_context: dict,
             return_layers_output=False
     ):
         T = xs.size(1)
         masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
+        cs_emb = combine_context["emb"]
+        xs = torch.cat([xs, cs_emb], dim=-1)
         xs, pos_emb, masks = self.embed(xs, masks)
-        emb = xs
         mask_pad = masks  # (B, 1, T/subsample_rate)
-        xs, xs_dict = self.forward_layers(xs, mask_pad, pos_emb, mask_pad, return_layers_output)
+        xs, xs_dict = self.forward_layers(xs, mask_pad, pos_emb, mask_pad, combine_context, return_layers_output)
         if self.normalize_before:
             xs = self.after_norm(xs)
-        xs_dict.update({'emb': emb})
         if return_layers_output:
             return xs, masks, xs_dict
         else:
@@ -138,10 +149,16 @@ class TextBertEncoder(torch.nn.Module):
             chunk_masks: torch.Tensor,
             pos_emb: torch.Tensor,
             mask_pad: torch.Tensor,
+            combine_context: dict,
             return_layers_output=False):
         xs_dict = {}
         for i, layer in enumerate(self.encoders):
             xs, chunk_masks, _, _ = layer(xs, chunk_masks, pos_emb, mask_pad)
+            cs = combine_context.get(f'layer_{i}', None)
+            if cs is None:
+                raise RuntimeError("No context for layer {}".format(i))
+            xs = torch.cat([xs, cs], dim=-1)
+            xs, *_ = self.projs[i](xs, mask_pad)
             if return_layers_output:
-                xs_dict[f'layer_{i}'] = self.after_norm(xs) if self.normalize_before else xs
+                xs_dict[f'layer_{i}'] = xs
         return xs, xs_dict

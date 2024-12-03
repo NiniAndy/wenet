@@ -173,9 +173,6 @@ fi
 
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
-  # Test model, please specify the model you want to test by --checkpoint
-  # TODO, Add model average here
-  mkdir -p $dir/test
   if [ ${average_checkpoint} == true ]; then
     decode_checkpoint=$dir/avg_${average_num}.pt
     # 如果不存在平均模型，则先进行平均

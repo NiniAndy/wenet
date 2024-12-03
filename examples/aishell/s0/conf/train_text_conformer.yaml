@@ -5,7 +5,6 @@ model_conf:
     lsm_weight: 0.1     # label smoothing option
     length_normalized_loss: false
 
-
 grad_clip: 5
 accum_grad: 4
 max_epoch: 240
@@ -49,7 +48,7 @@ audio_encoder_conf:
     selfattention_layer_type: 'rel_selfattn'
 
 
-pny2han_encoder: transformer
+pny2han_encoder: text_bert
 pny2han_encoder_conf:
     output_size: 256    # dimension of attention
     attention_heads: 4
@@ -61,7 +60,7 @@ pny2han_encoder_conf:
     input_layer: embed # audio_encoder architecture type
     normalize_before: true
 
-context_encoder: transformer
+context_encoder: context_encoder
 context_encoder_conf:
     output_size: 256    # dimension of attention
     attention_heads: 4
@@ -89,8 +88,9 @@ align_decoder_conf:
 
 
 # context_decoder related
-context_decoder: transformer
+context_decoder: context_decoder
 context_decoder_conf:
+    combine_method: 'add'
     attention_heads: 4
     linear_units: 2048
     num_blocks: 6

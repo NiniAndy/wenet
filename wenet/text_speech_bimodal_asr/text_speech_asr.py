@@ -149,6 +149,7 @@ class TextSpeechASR(torch.nn.Module):
         # Check that batch_size is unified
         assert (speech.shape[0] == speech_lengths.shape[0] == text.shape[0] ==text_lengths.shape[0]), \
             (speech.shape, speech_lengths.shape, text.shape, text_lengths.shape)
+
         # 1. Audio Encoder
         audio_encoder_out, audio_encoder_mask = self.audio_encoder(speech, speech_lengths)
         audio_encoder_out_lens = audio_encoder_mask.squeeze(1).sum(1)
@@ -159,41 +160,34 @@ class TextSpeechASR(torch.nn.Module):
         loss_align_att, acc_align_att = self._calc_align_att_loss(audio_encoder_out, audio_encoder_mask, align_decoder_input, pny, pny_lengths)
 
         # pny2han Encoder + Decoder
-        pny2han_encoder_out, pny2han_encoder_mask = self.pny2han_encoder(pny2han_encoder_input, audio_encoder_out_lens)
+        pny2han_encoder_out, pny2han_encoder_mask, pny2han_encoder_out_dict = self.pny2han_encoder(
+            pny2han_encoder_input, audio_encoder_out_lens, return_layers_output=True)
         loss_pny2han_ctc, _ = self.pny2han_ctc(pny2han_encoder_out, audio_encoder_out_lens, text, text_lengths)
-        loss_pny2han_att, acc_pny2han_att = self._calc_pny2han_att_loss(pny2han_encoder_out, pny2han_encoder_mask, text, text_lengths)
+        loss_pny2han_att, acc_pny2han_att, pny2han_decoder_out_dict = self._calc_pny2han_att_loss(
+            pny2han_encoder_out, pny2han_encoder_mask, text,  text_lengths)
+
+        # 3. Context Encoder + Decoder
+        context_encoder_out, context_encoder_mask = self.context_encoder(
+            audio_encoder_out, audio_encoder_out_lens, pny2han_encoder_out_dict)
+        loss_context_ctc, _ = self.context_ctc(context_encoder_out, audio_encoder_out_lens, text, text_lengths)
+        loss_context_att, acc_context_att = self._calc_context_att_loss(
+            context_encoder_out, context_encoder_mask, pny2han_decoder_out_dict, text, text_lengths)
+
+        loss_ctc =  loss_audio_ctc + loss_pny2han_ctc + loss_context_ctc
+        loss_att = loss_align_att + loss_pny2han_att + loss_context_att
+
+        loss = self.ctc_weight * loss_ctc + (1 - self.ctc_weight) * loss_att
+        acc_att = acc_context_att
 
 
-        # 2a. CTC branch
-        if self.ctc_weight != 0.0:
-            loss_ctc, ctc_probs = self.ctc(audio_encoder_out, audio_encoder_out_lens, text, text_lengths)
-        else:
-            loss_ctc, ctc_probs = None, None
-
-        # 2b. Attention-context_decoder branch
-        # use non blank (token level) embedding for context_decoder
-        if self.apply_non_blank_embedding:
-            assert self.ctc_weight != 0
-            assert ctc_probs is not None
-            audio_encoder_out, audio_encoder_mask = self.filter_blank_embedding(ctc_probs, audio_encoder_out)
-        if self.ctc_weight != 1.0:
-            loss_att, acc_att = self._calc_att_loss(
-                audio_encoder_out, audio_encoder_mask, text, text_lengths, {"langs": batch["langs"], "tasks": batch["tasks"]})
-        else:
-            loss_att = None
-            acc_att = None
-
-        if loss_ctc is None:
-            loss = loss_att
-        elif loss_att is None:
-            loss = loss_ctc
-        else:
-            loss = self.ctc_weight * loss_ctc + (1 - self.ctc_weight) * loss_att
         return {
             "loss": loss,
             "loss_att": loss_att,
             "loss_ctc": loss_ctc,
             "th_accuracy": acc_att,
+            "loss_align_att": loss_align_att,"loss_pny2han_att": loss_pny2han_att, "loss_context_att": loss_context_att,
+            "loss_audio_ctc": loss_audio_ctc, "loss_pny2han_ctc": loss_pny2han_ctc, "loss_context_ctc": loss_context_ctc,
+            "acc_align_att": acc_align_att, "acc_pny2han_att": acc_pny2han_att, "acc_context_att": acc_context_att
         }
 
     def _align_audio2pny(self, audio_encoder_output, audio_encoder_output_lens, pny, pny_lens):
@@ -217,9 +211,14 @@ class TextSpeechASR(torch.nn.Module):
                 same_num = ((pred_token == text_audio_alignment) * exist_non_blank_mask).sum(0)
                 target_num = (exist_non_blank_mask.sum() - same_num).float() * self.sampling_ratio
                 target_num = target_num.long()
-                non_blank_indices = torch.nonzero(exist_non_blank_mask).squeeze()
-                random_indices = non_blank_indices[torch.randperm(len(non_blank_indices))[:target_num]]
-                pred_token[random_indices] = text_audio_alignment[random_indices]
+                if target_num > 0:
+                    non_blank_indices = torch.nonzero(exist_non_blank_mask).squeeze()
+                    if len(non_blank_indices.size()) == 0:
+                        non_blank_indices = non_blank_indices.unsqueeze(0)
+                        random_indices = non_blank_indices
+                    else:
+                        random_indices = non_blank_indices[torch.randperm(len(non_blank_indices))[:target_num]]
+                    pred_token[random_indices] = text_audio_alignment[random_indices]
                 # 把相同的不为0的帧的概率平均
                 ctc_comp = self._average_repeats(ctc_prob, text_audio_alignment)
                 if ctc_comp.size(0) != pny_len:
@@ -281,8 +280,6 @@ class TextSpeechASR(torch.nn.Module):
         return compressed_ctc_prob
 
 
-
-
     def _calc_align_att_loss(
         self,
         audio_encoder_out: torch.Tensor,
@@ -305,7 +302,7 @@ class TextSpeechASR(torch.nn.Module):
         ys_pad: torch.Tensor,
         ys_pad_lens: torch.Tensor,
         infos: Dict[str, List[str]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ):
         ys_in_pad, ys_out_pad = add_sos_eos(ys_pad, self.sos, self.eos, self.ignore_id)
         ys_in_lens = ys_pad_lens + 1
 
@@ -313,8 +310,8 @@ class TextSpeechASR(torch.nn.Module):
         r_ys_pad = reverse_pad_list(ys_pad, ys_pad_lens, float(self.ignore_id))
         r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos, self.ignore_id)
         # 1. Forward context_decoder
-        decoder_out, r_decoder_out, _ = self.pny2han_decoder(
-            pny2han_encoder_out, pny2han_encoder_mask, ys_in_pad, ys_in_lens, r_ys_in_pad, self.reverse_weight)
+        decoder_out, r_decoder_out, _,  decoder_out_dict = self.pny2han_decoder(
+            pny2han_encoder_out, pny2han_encoder_mask, ys_in_pad, ys_in_lens, r_ys_in_pad, self.reverse_weight, return_layers_output=True)
         # 2. Compute attention loss
         loss_att = self.han_criterion_att(decoder_out, ys_out_pad)
         r_loss_att = torch.tensor(0.0)
@@ -322,7 +319,7 @@ class TextSpeechASR(torch.nn.Module):
             r_loss_att = self.criterion_att(r_decoder_out, r_ys_out_pad)
         loss_pny2han_att = loss_att * (1 - self.reverse_weight) + r_loss_att * self.reverse_weight
         acc_pny2han_att = th_accuracy(decoder_out.view(-1, self.vocab_size), ys_out_pad, ignore_label=self.ignore_id, )
-        return loss_pny2han_att, acc_pny2han_att
+        return loss_pny2han_att, acc_pny2han_att, decoder_out_dict
 
 
 
@@ -331,12 +328,13 @@ class TextSpeechASR(torch.nn.Module):
 
     @torch.jit.unused
     def _forward_ctc(
-            self, encoder_out: torch.Tensor, encoder_mask: torch.Tensor,
+            self,
+            encoder_out: torch.Tensor,
+            encoder_mask: torch.Tensor,
             text: torch.Tensor,
             text_lengths: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         encoder_out_lens = encoder_mask.squeeze(1).sum(1)
-        loss_ctc, ctc_probs = self.ctc(encoder_out, encoder_out_lens, text,
-                                       text_lengths)
+        loss_ctc, ctc_probs = self.ctc(encoder_out, encoder_out_lens, text, text_lengths)
         return loss_ctc, ctc_probs
 
     def filter_blank_embedding(
@@ -347,58 +345,43 @@ class TextSpeechASR(torch.nn.Module):
         top1_index = torch.argmax(ctc_probs, dim=2)
         indices = []
         for j in range(batch_size):
-            indices.append(
-                torch.tensor(
-                    [i for i in range(maxlen) if top1_index[j][i] != 0]))
+            indices.append(torch.tensor( [i for i in range(maxlen) if top1_index[j][i] != 0]))
 
         select_encoder_out = [
-            torch.index_select(encoder_out[i, :, :], 0,
-                               indices[i].to(encoder_out.device))
-            for i in range(batch_size)
-        ]
-        select_encoder_out = pad_sequence(select_encoder_out,
-                                          batch_first=True,
-                                          padding_value=0).to(
-                                              encoder_out.device)
-        xs_lens = torch.tensor([len(indices[i]) for i in range(batch_size)
-                                ]).to(encoder_out.device)
+            torch.index_select(encoder_out[i, :, :], 0, indices[i].to(encoder_out.device))
+            for i in range(batch_size) ]
+        select_encoder_out = pad_sequence(select_encoder_out, batch_first=True, padding_value=0).to(encoder_out.device)
+        xs_lens = torch.tensor([len(indices[i]) for i in range(batch_size) ]).to(encoder_out.device)
         T = select_encoder_out.size(1)
         encoder_mask = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
         encoder_out = select_encoder_out
         return encoder_out, encoder_mask
 
-    def _calc_att_loss(
+    def _calc_context_att_loss(
         self,
         encoder_out: torch.Tensor,
         encoder_mask: torch.Tensor,
+        pny2han_decoder_out_dict: dict,
         ys_pad: torch.Tensor,
         ys_pad_lens: torch.Tensor,
         infos: Dict[str, List[str]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        ys_in_pad, ys_out_pad = add_sos_eos(ys_pad, self.sos, self.eos,
-                                            self.ignore_id)
+        ys_in_pad, ys_out_pad = add_sos_eos(ys_pad, self.sos, self.eos, self.ignore_id)
         ys_in_lens = ys_pad_lens + 1
 
         # reverse the seq, used for right to left context_decoder
         r_ys_pad = reverse_pad_list(ys_pad, ys_pad_lens, float(self.ignore_id))
         r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos, self.ignore_id)
         # 1. Forward context_decoder
-        decoder_out, r_decoder_out, _ = self.context_decoder(encoder_out, encoder_mask,
-                                                             ys_in_pad, ys_in_lens,
-                                                             r_ys_in_pad,
-                                                             self.reverse_weight)
+        decoder_out, r_decoder_out, _ = self.context_decoder(
+            encoder_out, encoder_mask, ys_in_pad, ys_in_lens, r_ys_in_pad, pny2han_decoder_out_dict, self.reverse_weight)
         # 2. Compute attention loss
-        loss_att = self.criterion_att(decoder_out, ys_out_pad)
+        loss_att = self.han_criterion_att(decoder_out, ys_out_pad)
         r_loss_att = torch.tensor(0.0)
         if self.reverse_weight > 0.0:
-            r_loss_att = self.criterion_att(r_decoder_out, r_ys_out_pad)
-        loss_att = loss_att * (
-            1 - self.reverse_weight) + r_loss_att * self.reverse_weight
-        acc_att = th_accuracy(
-            decoder_out.view(-1, self.vocab_size),
-            ys_out_pad,
-            ignore_label=self.ignore_id,
-        )
+            r_loss_att = self.han_criterion_att(r_decoder_out, r_ys_out_pad)
+        loss_att = loss_att * (1 - self.reverse_weight) + r_loss_att * self.reverse_weight
+        acc_att = th_accuracy(decoder_out.view(-1, self.vocab_size), ys_out_pad, ignore_label=self.ignore_id,)
         return loss_att, acc_att
 
     def _forward_encoder(

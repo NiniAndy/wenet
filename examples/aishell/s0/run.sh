@@ -16,8 +16,8 @@ fi
 export CUDA_VISIBLE_DEVICES="${gpu_list}"
 echo "CUDA_VISIBLE_DEVICES is ${CUDA_VISIBLE_DEVICES}"
 
-stage=0
-stop_stage=3
+stage=5
+stop_stage=5
 
 HOST_NODE_ADDR="localhost:0"
 num_nodes=1
@@ -36,7 +36,6 @@ dict=data/dict/lang_char.txt
 data_type=raw
 num_utts_per_shard=1000
 
-train_set=train
 # Optional train_config
 # 1. conf/train_transformer.yaml: Standard transformer
 # 2. conf/train_conformer.yaml: Standard conformer
@@ -59,6 +58,10 @@ average_checkpoint=true
 average_num=10
 decode_checkpoint=$dir/avg_${average_num}.pt
 decode_modes="ctc_greedy_search ctc_prefix_beam_search attention attention_rescoring"
+
+train_set=train
+dev_set=dev
+recog_set="dev test"
 
 train_engine=torch_ddp
 
@@ -119,10 +122,11 @@ fi
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
   mkdir -p $dir
   num_gpus=$(echo $CUDA_VISIBLE_DEVICES | awk -F "," '{print NF}')
-  # Use "nccl" if it works, otherwise use "gloo"
-  # NOTE(xcsong): deepspeed fails with gloo, see
-  #   https://github.com/microsoft/DeepSpeed/issues/2818
   dist_backend="nccl"
+
+  current_time=$(date "+%Y-%m-%d_%H-%M")
+  log_file="${dir}/train.log.txt.${current_time}"
+  echo "log_file: ${log_file}"
 
   # train.py rewrite $train_config to $dir/train.yaml with model input
   # and output dimension, and $dir/train.yaml will be used for inference
@@ -141,7 +145,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
       --config $train_config \
       --data_type  $data_type \
       --train_data data/$train_set/data.list \
-      --cv_data data/dev/data.list \
+      --cv_data data/$dev_set/data.list \
       ${checkpoint:+--checkpoint $checkpoint} \
       --model_dir $dir \
       --tensorboard_dir ${tensorboard_dir} \
@@ -150,7 +154,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
       --prefetch ${prefetch} \
       --pin_memory \
       --deepspeed_config ${deepspeed_config} \
-      --deepspeed.save_states ${deepspeed_save_states}
+      --deepspeed.save_states ${deepspeed_save_states} &> ${log_file}
 fi
 
 
@@ -178,25 +182,28 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
   ctc_weight=0.3
   reverse_weight=0.0
 
-  result_dir="${decode_checkpoint}-ctc${ctc_weight}-re${reverse_weight}-inference"
-  mkdir -p $result_dir
+  for test in $recog_set; do
+    result_dir="${decode_checkpoint}-ctc${ctc_weight}-re${reverse_weight}-inference/${test}"
+    mkdir -p $result_dir
 
-  python wenet/bin/recognize.py --gpu 0 \
-    --modes $decode_modes \
-    --config $dir/train.yaml \
-    --data_type $data_type \
-    --test_data data/test/data.list \
-    --checkpoint $decode_checkpoint \
-    --beam_size 10 \
-    --batch_size 32 \
-    --blank_penalty 0.0 \
-    --ctc_weight $ctc_weight \
-    --reverse_weight $reverse_weight \
-    --result_dir $result_dir \
-    ${decoding_chunk_size:+--decoding_chunk_size $decoding_chunk_size}
-  for mode in ${decode_modes}; do
-    python tools/compute-wer.py --char=1 --v=1 \
-      data/test/text $result_dir/$mode/text > $result_dir/$mode/wer
+    python wenet/bin/recognize.py --gpu 0 \
+      --modes $decode_modes \
+      --config $dir/train.yaml \
+      --data_type $data_type \
+      --test_data data/$test/data.list \
+      --checkpoint $decode_checkpoint \
+      --beam_size 10 \
+      --batch_size 32 \
+      --blank_penalty 0.0 \
+      --ctc_weight $ctc_weight \
+      --reverse_weight $reverse_weight \
+      --result_dir $result_dir \
+      ${decoding_chunk_size:+--decoding_chunk_size $decoding_chunk_size}
+
+    for mode in ${decode_modes}; do
+      python tools/compute-wer.py --char=1 --v=1 \
+        data/$test/text $result_dir/$mode/text > $result_dir/$mode/wer
+    done
   done
 fi
 

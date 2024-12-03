@@ -800,8 +800,8 @@ def log_per_step(writer, info_dict, timer: Optional[StepTimer] = None):
     accum_grad = info_dict.get('accum_grad', 1) if tag != "CV" else 1
     log_interval = info_dict.get('log_interval', 10)
     lrs = info_dict.get("lrs", [0.0])
-    is_gradient_accumulation_boundary = info_dict.get(
-        "is_gradient_accumulation_boundary", False)
+    is_gradient_accumulation_boundary = info_dict.get("is_gradient_accumulation_boundary", False)
+
 
     rank = int(os.environ.get('RANK', 0))
     # TRAIN Tensorboard

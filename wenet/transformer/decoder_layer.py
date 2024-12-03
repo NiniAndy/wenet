@@ -23,7 +23,7 @@ from wenet.utils.class_utils import WENET_NORM_CLASSES
 
 
 class DecoderLayer(nn.Module):
-    """Single context_decoder layer module.
+    """Single decoder layer module.
 
     Args:
         size (int): Input dimension.
@@ -32,7 +32,7 @@ class DecoderLayer(nn.Module):
         src_attn (torch.nn.Module): Inter-attention module instance.
             `MultiHeadedAttention` instance can be used as the argument.
             If `None` is passed, Inter-attention is not used, such as
-            CIF, GPT, and other context_decoder only model.
+            CIF, GPT, and other decoder only model.
         feed_forward (torch.nn.Module): Feed-forward module instance.
             `PositionwiseFeedForward` instance can be used as the argument.
         dropout_rate (float): Dropout rate.

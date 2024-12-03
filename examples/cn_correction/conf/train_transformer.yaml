@@ -20,7 +20,7 @@ scheduler_conf:
     warmup_steps: 25000
 
 
-encoder: transformer
+encoder: text_bert
 encoder_conf:
     output_size: 256    # dimension of attention
     attention_heads: 4

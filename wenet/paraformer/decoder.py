@@ -189,9 +189,9 @@ class ParaformerV2SANDecoder(TransformerDecoder):
         x, _ = self.embed(tgt)
         # x = tgt
         if self.gradient_checkpointing and self.training:
-            x = self.forward_layers_checkpointed(x, tgt_mask, memory, memory_mask)
+            x, x_dict = self.forward_layers_checkpointed(x, tgt_mask, memory, memory_mask)
         else:
-            x = self.forward_layers(x, tgt_mask, memory, memory_mask)
+            x, x_dict = self.forward_layers(x, tgt_mask, memory, memory_mask)
 
         if self.normalize_before:
             x = self.after_norm(x)

@@ -66,7 +66,7 @@ class BaseEncoder(torch.nn.Module):
             attention_heads (int): the number of heads of multi head attention
             linear_units (int): the hidden units number of position-wise feed
                 forward
-            num_blocks (int): the number of context_decoder blocks
+            num_blocks (int): the number of decoder blocks
             dropout_rate (float): dropout rate
             attention_dropout_rate (float): dropout rate in attention
             positional_dropout_rate (float): dropout rate after adding
@@ -127,7 +127,8 @@ class BaseEncoder(torch.nn.Module):
         xs_lens: torch.Tensor,
         decoding_chunk_size: int = 0,
         num_decoding_left_chunks: int = -1,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return_layers_output=False,
+    ):
         """Embed positions in tensor.
 
         Args:
@@ -170,37 +171,53 @@ class BaseEncoder(torch.nn.Module):
             max_chunk_size=int(100.0 / self.embed.subsampling_rate))
         if self.use_sdpa:
             chunk_masks = mask_to_bias(chunk_masks, xs.dtype)
+
         if self.gradient_checkpointing and self.training:
-            xs = self.forward_layers_checkpointed(xs, chunk_masks, pos_emb, mask_pad)
+            xs, xs_dict= self.forward_layers_checkpointed(xs, chunk_masks, pos_emb, mask_pad, return_layers_output)
         else:
-            xs = self.forward_layers(xs, chunk_masks, pos_emb, mask_pad)
+            xs, xs_dict = self.forward_layers(xs, chunk_masks, pos_emb, mask_pad, return_layers_output)
+
         if self.normalize_before:
             xs = self.after_norm(xs)
         # Here we assume the mask is not changed in audio_encoder layers, so just
         # return the masks before audio_encoder layers, and the masks will be used
-        # for cross attention with context_decoder later
-        return xs, masks
+        # for cross attention with decoder later
+        if return_layers_output:
+            return xs, masks, xs_dict
+        else:
+            return xs, masks
 
-    def forward_layers(self, xs: torch.Tensor, chunk_masks: torch.Tensor,
+    def forward_layers(self,
+                       xs: torch.Tensor,
+                       chunk_masks: torch.Tensor,
                        pos_emb: torch.Tensor,
-                       mask_pad: torch.Tensor) -> torch.Tensor:
-        for layer in self.encoders:
+                       mask_pad: torch.Tensor,
+                       return_layers_output = False):
+        xs_dict = {}
+        for i, layer in enumerate(self.encoders):
             xs, chunk_masks, _, _ = layer(xs, chunk_masks, pos_emb, mask_pad)
-        return xs
+            if return_layers_output:
+                xs_dict[f'layer_{i}'] = xs
+        return xs, xs_dict
 
     @torch.jit.unused
-    def forward_layers_checkpointed(self, xs: torch.Tensor,
+    def forward_layers_checkpointed(self,
+                                    xs: torch.Tensor,
                                     chunk_masks: torch.Tensor,
                                     pos_emb: torch.Tensor,
-                                    mask_pad: torch.Tensor) -> torch.Tensor:
-        for layer in self.encoders:
+                                    mask_pad: torch.Tensor,
+                                    return_layers_output=False) -> torch.Tensor:
+        xs_dict = {}
+        for i, layer in enumerate(self.encoders):
             xs, chunk_masks, _, _ = ckpt.checkpoint(layer.__call__,
                                                     xs,
                                                     chunk_masks,
                                                     pos_emb,
                                                     mask_pad,
                                                     use_reentrant=False)
-        return xs
+            if return_layers_output:
+                xs_dict[f'layer_{i}'] = xs
+        return xs, xs_dict
 
     def forward_chunk(
         self,

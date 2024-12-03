@@ -162,7 +162,7 @@ class WhisperPositionalEncoding(PositionalEncoding):
 
 
 class LearnablePositionalEncoding(PositionalEncoding):
-    """ Learnable position encoding used in openai-whisper.context_decoder
+    """ Learnable position encoding used in openai-whisper.decoder
     """
 
     def __init__(self, d_model: int, dropout_rate: float, max_len: int = 448):
