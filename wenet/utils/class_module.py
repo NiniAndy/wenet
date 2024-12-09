@@ -17,6 +17,8 @@ from wenet.transformer.ctc import CTC
 from wenet.transformer.decoder import BiTransformerDecoder, TransformerDecoder
 from wenet.transformer.encoder import TransformerEncoder, ConformerEncoder
 from wenet.cn_correction.encoder import TextBertEncoder
+from wenet.text_speech_bimodal_asr.encoder import ContextEncoder
+from wenet.text_speech_bimodal_asr.decoder import ContextDecoder
 
 WENET_ENCODER_CLASSES = {
     "transformer": TransformerEncoder,
@@ -28,7 +30,8 @@ WENET_ENCODER_CLASSES = {
     "dual_transformer": DualTransformerEncoder,
     "dual_conformer": DualConformerEncoder,
     'sanm_encoder': SanmEncoder,
-    'text_bert': TextBertEncoder
+    'text_bert': TextBertEncoder,
+    "context_encoder": ContextEncoder
 }
 
 WENET_DECODER_CLASSES = {
@@ -36,7 +39,8 @@ WENET_DECODER_CLASSES = {
     "bitransformer": BiTransformerDecoder,
     "sanm_decoder": SanmDecoder,
     "paraformer": ParaformerSANDecoder,
-    "paraformerV2": ParaformerV2SANDecoder
+    "paraformerV2": ParaformerV2SANDecoder,
+    "context_decoder": ContextDecoder
 }
 
 WENET_CTC_CLASSES = {

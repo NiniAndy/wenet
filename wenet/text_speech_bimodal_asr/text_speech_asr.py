@@ -17,7 +17,7 @@ from wenet.utils.mask import make_pad_mask
 from wenet.utils.common import (IGNORE_ID, add_sos_eos, th_accuracy,
                                 reverse_pad_list)
 from wenet.utils.context_graph import ContextGraph
-from wenet.transformer.cmvn import GlobalCMVN
+from wenet.transformer.cmvn import GlobalCMVN, UtteranceMVN
 from wenet.utils.cmvn import load_cmvn
 from wenet.utils.class_module import WENET_ENCODER_CLASSES, WENET_DECODER_CLASSES, WENET_CTC_CLASSES
 
@@ -56,6 +56,8 @@ class TextSpeechASR(torch.nn.Module):
         if cmvn == 'global_cmvn':
             mean, istd = load_cmvn(cmvn_conf['cmvn_file'], cmvn_conf['is_json_cmvn'])
             global_cmvn = GlobalCMVN(torch.from_numpy(mean).float(), torch.from_numpy(istd).float())
+        elif cmvn == 'utterance_cmvn':
+            global_cmvn = UtteranceMVN()
         else:
             global_cmvn = None
 
